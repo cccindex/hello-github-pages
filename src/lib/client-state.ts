@@ -99,5 +99,7 @@ export function useProductAction() {
       return body as ProductState;
     },
     onSuccess: (state) => client.setQueryData(["product-state"], state),
+    onError: () =>
+      client.invalidateQueries({ queryKey: ["product-state"] }),
   });
 }

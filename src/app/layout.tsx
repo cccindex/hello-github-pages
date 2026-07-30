@@ -7,8 +7,8 @@ const sans = Geist({ variable: "--font-sans", subsets: ["latin"] });
 const mono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Five Minute Bitcoin",
-  description: "A hosted recurring 1 USDC to cbBTC prototype.",
+  title: "Paybox Rooms",
+  description: "Four chat-first AI agent experiences powered by bounded payments.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

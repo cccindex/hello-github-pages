@@ -1,77 +1,90 @@
 import Link from "next/link";
-import { ArrowRight, Check, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  FlaskConical,
+  Search,
+  Sparkles,
+  Swords,
+  Target,
+} from "lucide-react";
 
-const facts = [
-  "1 USDC per purchase",
-  "Every five minutes",
-  "Solana mainnet",
-  "cbBTC",
-  "$12 rolling daily maximum",
-  "$25 lifetime maximum",
-  "Stops after 24 hours",
+const rooms = [
+  {
+    index: "01",
+    route: "/trade",
+    label: "Signal desk",
+    title: "Trade the signal",
+    description: "A live market desk that reads free and paid feeds, challenges its own thesis, and builds a bounded trade.",
+    icon: Bot,
+    accent: "#f0ff6a",
+  },
+  {
+    index: "02",
+    route: "/intel",
+    label: "Research hunter",
+    title: "Buy the evidence",
+    description: "Give an agent a question and a tiny budget. Watch it decide which x402 sources are actually worth paying for.",
+    icon: Search,
+    accent: "#ff815c",
+  },
+  {
+    index: "03",
+    route: "/duel",
+    label: "Agent arena",
+    title: "Make agents argue",
+    description: "Two opposing strategies face the same market. Evidence quality—not personality—decides who earns the trade.",
+    icon: Swords,
+    accent: "#9f8cff",
+  },
+  {
+    index: "04",
+    route: "/quest",
+    label: "Onchain quest",
+    title: "Follow the money",
+    description: "Play a five-minute crypto mystery where your agent purchases clues and traces behavior across the chain.",
+    icon: Target,
+    accent: "#64e6c4",
+  },
 ];
 
 export default function Home() {
   return (
-    <main className="landing">
-      <header className="landing-nav">
-        <div className="brand"><span className="brand-mark">₿</span> Five Minute Bitcoin</div>
-        <span className="local-pill">Hosted prototype</span>
+    <main className="rooms-home">
+      <header className="rooms-nav">
+        <Link href="/" className="experience-brand">
+          <span className="experience-brand-mark"><Sparkles size={16} /></span>
+          <span>Paybox Rooms</span>
+        </Link>
+        <div className="rooms-nav-actions">
+          <Link href="/dashboard"><FlaskConical size={12} /> Bitcoin autopilot</Link>
+          <Link href="/connect">Connect Paybox <ArrowRight size={12} /></Link>
+        </div>
       </header>
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">1 USDC → cbBTC on Solana</p>
-          <h1>Buy $1 of Bitcoin every five minutes.</h1>
-          <p className="hero-lede">
-            Connect your Paybox wallet once. Five Minute Bitcoin automatically
-            swaps exactly 1 USDC into cbBTC within strict limits you can pause or
-            revoke at any time.
-          </p>
-          <div className="button-row">
-            <Link href="/connect" className="button button-primary">
-              Start setup <ArrowRight size={17} />
-            </Link>
-            <a href="#how" className="button button-secondary">See how it works</a>
-          </div>
-          <p className="trust-note"><ShieldCheck size={17} /> Real execution is locked off by default.</p>
-        </div>
-        <div className="hero-card">
-          <div className="hero-card-top">
-            <span>Fixed purchase</span>
-            <span className="live-dot">Mock ready</span>
-          </div>
-          <strong className="swap-amount">1.00 <small>USDC</small></strong>
-          <div className="swap-arrow">↓</div>
-          <strong className="swap-amount">cbBTC <small>Solana</small></strong>
-          <div className="hero-rule" />
-          <div className="hero-card-row"><span>Frequency</span><b>Every 5 minutes</b></div>
-          <div className="hero-card-row"><span>Maximum today</span><b>$12.00</b></div>
-          <div className="hero-card-row"><span>Lifetime cap</span><b>$25.00</b></div>
-        </div>
-      </section>
-      <section className="how" id="how">
-        <p className="eyebrow">One narrow workflow</p>
-        <div className="flow-grid">
-          {["Connect wallet", "Test one purchase", "Activate automation", "Receive cbBTC"].map(
-            (step, index) => (
-              <div className="flow-step" key={step}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <strong>{step}</strong>
-                {index < 3 && <ArrowRight size={16} />}
-              </div>
-            ),
-          )}
-        </div>
-        <div className="facts">
-          {facts.map((fact) => <span key={fact}><Check size={14} /> {fact}</span>)}
-        </div>
-      </section>
-      <footer className="landing-footer">
+      <section className="rooms-hero">
+        <p>Four agents. Four links. One wallet.</p>
+        <h1>Give the internet a budget.</h1>
         <p>
-          Experimental recurring swap prototype. cbBTC is a wrapped representation
-          of Bitcoin on Solana. It is not native Bitcoin.
+          Chat-first experiments where AI can investigate, debate, play and
+          transact—while every paid action stays visible and bounded.
         </p>
-      </footer>
+      </section>
+      <section className="rooms-grid">
+        {rooms.map(({ index, route, label, title, description, icon: Icon, accent }) => (
+          <Link
+            href={route}
+            className="room-card"
+            style={{ "--card-accent": accent } as React.CSSProperties}
+            key={route}
+          >
+            <div className="room-card-top"><span>{index}</span><span>{label.toUpperCase()}</span></div>
+            <div className="room-card-icon"><Icon size={22} /></div>
+            <h2>{title}</h2>
+            <p>{description}</p>
+            <div className="room-card-link">Enter room <ArrowRight size={15} /></div>
+          </Link>
+        ))}
+      </section>
     </main>
   );
 }

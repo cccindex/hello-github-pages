@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import {
   ArrowRight,
   Bot,
@@ -206,44 +206,124 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
   const [submittedExecution, setSubmittedExecution] =
     useState<ProductState["executions"][number] | null>(null);
   const [actionResult, setActionResult] = useState("");
+  const [chatLoaded, setChatLoaded] = useState(false);
 
   const connected = data?.connection?.status === "CONNECTED";
   const balance = data?.connection?.usdcBalanceAtomic
     ? (Number(data.connection.usdcBalanceAtomic) / 1e6).toFixed(2)
     : "—";
 
-  const ask = (prompt: string) => {
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(`paybox-room-chat-v1:${kind}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as {
+          messages?: ChatMessage[];
+          activity?: number;
+        };
+        if (Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+          setMessages(parsed.messages.slice(-60));
+        }
+        if (typeof parsed.activity === "number") setActivity(parsed.activity);
+      }
+    } catch {
+      // A fresh chat is a safe fallback if browser storage is unavailable.
+    }
+    setChatLoaded(true);
+  }, [kind]);
+
+  useEffect(() => {
+    if (!chatLoaded) return;
+    try {
+      window.localStorage.setItem(
+        `paybox-room-chat-v1:${kind}`,
+        JSON.stringify({ messages: messages.slice(-60), activity }),
+      );
+    } catch {
+      // The server execution ledger still preserves financial action history.
+    }
+  }, [activity, chatLoaded, kind, messages]);
+
+  const deterministicAction = (
+    prompt: string,
+  ): ChatMessage["action"] =>
+    kind === "trade" &&
+    (prompt === "Find one interesting trade" ||
+      prompt === "Build the trade plan" ||
+      prompt.toLowerCase().includes("buy exactly $1"))
+      ? "trade"
+      : prompt === "Automate $1 every five minutes" && kind === "trade"
+        ? "automation"
+        : kind === "duel" && prompt === "Let the winner place $1"
+          ? "trade"
+          : undefined;
+
+  const ask = async (prompt: string) => {
     if (!prompt.trim() || isThinking) return;
-    setMessages((current) => [...current, { role: "user", text: prompt.trim() }]);
+    const userMessage: ChatMessage = { role: "user", text: prompt.trim() };
+    const requestHistory = [...messages, userMessage]
+      .slice(-20)
+      .map((message) => ({
+        role: message.role === "agent" ? ("assistant" as const) : ("user" as const),
+        content: message.text,
+      }));
+    setMessages((current) => [...current, userMessage]);
     setInput("");
     setIsThinking(true);
-    window.setTimeout(() => {
-      const reply =
+    try {
+      let reply =
         config.replies[prompt] ??
         `I’d break “${prompt.trim()}” into evidence, cost and action. I can investigate within a fixed budget, show every source, and ask before any real transaction.`;
-      const messageAction =
-        kind === "trade" &&
-        (prompt === "Find one interesting trade" ||
-          prompt === "Build the trade plan" ||
-          prompt.toLowerCase().includes("buy exactly $1"))
-          ? "trade"
-          : prompt === "Automate $1 every five minutes"
-            ? "automation"
-            : kind === "duel" && prompt === "Let the winner place $1"
-              ? "trade"
-              : undefined;
+      let messageAction = deterministicAction(prompt);
+      let responseMeta = "Demo response · OpenRouter key required";
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind, messages: requestHistory }),
+      });
+
+      if (response.ok) {
+        const body = (await response.json()) as {
+          message: string;
+          action: "trade" | "automation" | null;
+          model: string;
+        };
+        reply = body.message;
+        if (
+          (body.action === "trade" && ["trade", "duel"].includes(kind)) ||
+          (body.action === "automation" && kind === "trade")
+        ) {
+          messageAction = body.action;
+        }
+        responseMeta = `OpenRouter · ${body.model}`;
+      }
+
       setMessages((current) => [
         ...current,
         {
           role: "agent",
           text: reply,
-          meta: messageAction ? "Action ready · nothing executed yet" : "Agent response · no transaction",
+          meta: messageAction ? `${responseMeta} · action ready` : responseMeta,
           action: messageAction,
         },
       ]);
       setActivity((value) => value + 1);
+    } catch {
+      setMessages((current) => [
+        ...current,
+        {
+          role: "agent",
+          text:
+            config.replies[prompt] ??
+            "The AI service is unavailable, so I have not proposed or executed any action.",
+          meta: "AI unavailable · nothing executed",
+          action: deterministicAction(prompt),
+        },
+      ]);
+    } finally {
       setIsThinking(false);
-    }, 650);
+    }
   };
 
   const submit = (event: FormEvent) => {
@@ -255,23 +335,51 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
     setActionResult("");
     try {
       const nextState = await productAction.mutateAsync({ action: "run-now" });
-      const execution = nextState.executions[0] ?? null;
+      const execution =
+        nextState.executions.find((item) => item.type === "MANUAL_PURCHASE") ?? null;
       setSubmittedExecution(execution);
       if (!execution) {
         setActionResult("No execution was created.");
+        setMessages((current) => [
+          ...current,
+          { role: "agent", text: "No trade execution was created.", meta: "Action history · stopped" },
+        ]);
       } else if (
         ["BLOCKED_BY_POLICY", "FAILED", "DENIED", "SKIPPED_PREVIOUS_EXECUTION_PENDING"].includes(
           execution.status,
         )
       ) {
-        setActionResult(execution.errorMessage ?? `Trade stopped: ${execution.status.replaceAll("_", " ")}.`);
+        const result =
+          execution.errorMessage ?? `Trade stopped: ${execution.status.replaceAll("_", " ")}.`;
+        setActionResult(result);
+        setMessages((current) => [
+          ...current,
+          { role: "agent", text: result, meta: `Action history · ${execution.status.replaceAll("_", " ")}` },
+        ]);
       } else if (execution.status === "SUCCESS") {
         setActionResult("Trade completed successfully.");
+        setMessages((current) => [
+          ...current,
+          { role: "agent", text: "The confirmed $1 trade completed successfully.", meta: "Action history · success" },
+        ]);
       } else {
         setActionResult("Trade request created. Complete the Paybox signing step below.");
+        setMessages((current) => [
+          ...current,
+          {
+            role: "agent",
+            text: `Paybox request ${execution.providerRequestId?.slice(0, 8) ?? execution.id.slice(0, 8)} was created and is waiting at ${execution.status.replaceAll("_", " ").toLowerCase()}.`,
+            meta: "Action history · request created",
+          },
+        ]);
       }
     } catch (error) {
-      setActionResult(error instanceof Error ? error.message : "The trade could not be created.");
+      const result = error instanceof Error ? error.message : "The trade could not be created.";
+      setActionResult(result);
+      setMessages((current) => [
+        ...current,
+        { role: "agent", text: result, meta: "Action history · error" },
+      ]);
     }
   };
 
@@ -282,13 +390,22 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
         action: "activate",
         confirmation: "ACTIVATE",
       });
-      setActionResult(
+      const result =
         nextState.realRecurringExecutionEnabled
           ? "Automation activated."
-          : "Automation saved, but real recurring execution remains disabled on the server.",
-      );
+          : "Automation saved, but real recurring execution remains disabled on the server.";
+      setActionResult(result);
+      setMessages((current) => [
+        ...current,
+        { role: "agent", text: result, meta: "Action history · automation updated" },
+      ]);
     } catch (error) {
-      setActionResult(error instanceof Error ? error.message : "Automation could not be activated.");
+      const result = error instanceof Error ? error.message : "Automation could not be activated.";
+      setActionResult(result);
+      setMessages((current) => [
+        ...current,
+        { role: "agent", text: result, meta: "Action history · automation stopped" },
+      ]);
     }
   };
 
@@ -302,6 +419,12 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
     setSubmittedExecution(refreshed);
     if (refreshed?.status === "SUCCESS") {
       setActionResult("Trade completed successfully.");
+      if (submittedExecution.status !== "SUCCESS") {
+        setMessages((current) => [
+          ...current,
+          { role: "agent", text: "Paybox confirmed the trade on Solana.", meta: "Action history · success" },
+        ]);
+      }
     }
   };
 
@@ -364,6 +487,13 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
           </div>
 
           <div className="chat-messages">
+            {kind === "trade" && data && (
+              <ServerActionHistory
+                executions={data.executions.filter((item) =>
+                  ["MANUAL_PURCHASE", "TEST_PURCHASE"].includes(item.type),
+                ).slice(0, 5)}
+              />
+            )}
             {messages.map((message, index) => (
               <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
                 {message.role === "agent" && <span className="message-avatar"><Sparkles size={12} /></span>}
@@ -542,6 +672,42 @@ function ChatActionCard({
         </>
       )}
     </div>
+  );
+}
+
+function ServerActionHistory({
+  executions,
+}: {
+  executions: ProductState["executions"];
+}) {
+  if (!executions.length) return null;
+  return (
+    <details className="server-action-history">
+      <summary>
+        <span><Radio size={12} /> Action history</span>
+        <b>{executions.length}</b>
+      </summary>
+      <div>
+        {executions.map((execution) => (
+          <article key={execution.id}>
+            <i className={`history-status history-${execution.status.toLowerCase()}`} />
+            <div>
+              <strong>{execution.type.replaceAll("_", " ")}</strong>
+              <span>
+                {execution.status.replaceAll("_", " ")}
+                {execution.errorMessage ? ` · ${execution.errorMessage}` : ""}
+              </span>
+            </div>
+            <time>
+              {new Date(execution.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </time>
+          </article>
+        ))}
+      </div>
+    </details>
   );
 }
 

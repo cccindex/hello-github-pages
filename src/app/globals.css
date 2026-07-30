@@ -490,6 +490,22 @@ input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,111,77,.
 .chat-head span i { width: 5px; height: 5px; margin-right: 4px; display: inline-block; border-radius: 50%; background: #64e6a7; }
 .model-pill { padding: 5px 6px; border: 1px solid rgba(255,255,255,.1); border-radius: 4px; color: #656b65 !important; font: 7px var(--font-mono), monospace !important; }
 .chat-messages { min-height: 0; padding: 22px 20px; overflow-y: auto; }
+.server-action-history { margin-bottom: 18px; border: 1px solid rgba(255,255,255,.09); border-radius: 8px; background: #131613; }
+.server-action-history summary { min-height: 37px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; color: #858b84; list-style: none; font-size: 8px; font-weight: 690; text-transform: uppercase; letter-spacing: .07em; }
+.server-action-history summary::-webkit-details-marker { display: none; }
+.server-action-history summary span { display: flex; align-items: center; gap: 6px; }
+.server-action-history summary svg { color: var(--room-accent); }
+.server-action-history summary b { padding: 3px 5px; border-radius: 4px; background: rgba(255,255,255,.06); font: 7px var(--font-mono), monospace; }
+.server-action-history > div { padding: 0 10px 8px; }
+.server-action-history article { min-height: 43px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; border-top: 1px solid rgba(255,255,255,.06); }
+.server-action-history article > div { min-width: 0; display: grid; gap: 2px; }
+.server-action-history article strong { color: #afb4ae; font-size: 8px; font-weight: 620; }
+.server-action-history article span { overflow: hidden; color: #616761; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.server-action-history time { color: #4f554f; font: 7px var(--font-mono), monospace; }
+.history-status { width: 6px; height: 6px; border-radius: 50%; background: #777d77; }
+.history-success { background: #64e6a7; }
+.history-blocked_by_policy, .history-failed, .history-denied { background: #ff815c; }
+.history-pending_signature, .history-pending_confirmation, .history-pending_settlement { background: #f0d66a; }
 .chat-message { margin-bottom: 20px; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 9px; }
 .chat-message.user { grid-template-columns: minmax(0,1fr); justify-items: end; }
 .chat-message > div { max-width: 92%; }

@@ -16,6 +16,7 @@ export type PolicyDecision = {
 
 export type PolicyInput = {
   isTest: boolean;
+  requiresActiveAutomation: boolean;
   automationStatus: string;
   expiresAt: Date | null;
   credentialExists: boolean;
@@ -48,10 +49,25 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
 
   add(
     "automation-state",
-    input.isTest || input.automationStatus === "ACTIVE",
-    input.isTest ? "Test purchase is permitted before activation." : "Automation is active.",
+    input.isTest || !input.requiresActiveAutomation || input.automationStatus === "ACTIVE",
+    input.isTest
+      ? "Test purchase is permitted before activation."
+      : input.requiresActiveAutomation
+        ? input.automationStatus === "ACTIVE"
+          ? "Automation is active."
+          : "Automation must be active for a scheduled purchase."
+        : "Manual purchases do not require the recurring automation to be active.",
   );
-  add("not-expired", input.isTest || !input.expiresAt || input.expiresAt > new Date(), "Automation has not expired.");
+  add(
+    "not-expired",
+    input.isTest ||
+      !input.requiresActiveAutomation ||
+      !input.expiresAt ||
+      input.expiresAt > new Date(),
+    input.requiresActiveAutomation
+      ? "Automation has not expired."
+      : "Automation expiry does not apply to a manual purchase.",
+  );
   add("credential-exists", input.credentialExists, "Selected credential exists.");
   add("credential-granted", input.credentialGranted, "Selected credential is granted.");
   add("solana-support", input.credentialSupportsSolana, "Credential supports Solana mainnet.");

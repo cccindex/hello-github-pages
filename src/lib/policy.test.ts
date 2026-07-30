@@ -5,6 +5,7 @@ import { evaluatePolicy, type PolicyInput } from "@/lib/policy";
 function valid(overrides: Partial<PolicyInput> = {}): PolicyInput {
   return {
     isTest: false,
+    requiresActiveAutomation: true,
     automationStatus: "ACTIVE",
     expiresAt: new Date(Date.now() + 60_000),
     credentialExists: true,
@@ -55,5 +56,15 @@ describe("purchase policy", () => {
     ["pending request", { hasInFlightExecution: true }],
   ] satisfies Array<[string, Partial<PolicyInput>]>)("blocks %s", (_name, overrides) => {
     expect(evaluatePolicy(valid(overrides)).allowed).toBe(false);
+  });
+
+  it("allows a manual purchase while recurring automation is paused", () => {
+    const decision = evaluatePolicy(
+      valid({
+        automationStatus: "PAUSED",
+        requiresActiveAutomation: false,
+      }),
+    );
+    expect(decision.allowed).toBe(true);
   });
 });

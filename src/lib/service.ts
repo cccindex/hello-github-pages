@@ -347,6 +347,7 @@ export async function createExecution(
   const counts = await countsFor(user.id);
   const decision = evaluatePolicy({
     isTest,
+    requiresActiveAutomation: type === ExecutionType.SCHEDULED_PURCHASE,
     automationStatus: automation.status,
     expiresAt: automation.expiresAt,
     credentialExists: Boolean(connection.selectedCredentialId),

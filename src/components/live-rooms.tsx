@@ -61,6 +61,7 @@ const NAV = [
   { href: "/trade", label: "AI transact" },
   { href: "/intel", label: "Stock feed" },
   { href: "/predictions", label: "World markets" },
+  { href: "/portfolio", label: "Portfolio" },
 ];
 
 function money(value: number | null, digits = 2) {

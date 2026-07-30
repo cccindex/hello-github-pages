@@ -11,7 +11,7 @@ Paybox MCP tools have been discovered and normalized.
 
 Requirements:
 
-- Node.js 20+
+- Node.js 24+
 - Docker Desktop
 - pnpm
 

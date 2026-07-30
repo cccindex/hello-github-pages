@@ -230,6 +230,7 @@ h1, h2, h3, p { margin-top: 0; }
 .fixed-swap span { color: var(--muted); }
 .fixed-details { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
 .fixed-details span { padding: 6px 9px; border-radius: 5px; background: var(--surface-soft); color: var(--muted); font-size: 11px; }
+.fixed-action .note-box { grid-column: 1 / -1; }
 
 .approval-card { margin-bottom: 18px; padding: 24px; display: grid; grid-template-columns: 46px 1fr; gap: 17px; border-color: #dfc49d; background: #fffbf3; }
 .approval-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 11px; background: var(--orange-soft); color: var(--orange); }

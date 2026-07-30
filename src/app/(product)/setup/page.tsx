@@ -10,6 +10,12 @@ export default function SetupPage() {
     <WithState>
       {(state, action) => {
         const selected = state.connection?.selectedCredentialId;
+        const latestTest = state.executions.find(
+          (execution) => execution.type === "TEST_PURCHASE",
+        );
+        const blockedTest =
+          latestTest?.status === "BLOCKED_BY_POLICY" ||
+          latestTest?.status === "FAILED";
         return (
           <div className="page">
             <div className="page-heading split">
@@ -60,8 +66,17 @@ export default function SetupPage() {
                   onClick={() => action.mutate({ action: "run-test" })}
                   disabled={action.isPending}
                 >
-                  Run $1 test purchase
+                  {action.isPending ? "Running test…" : "Run $1 test purchase"}
                 </Button>
+              )}
+              {blockedTest && (
+                <div className="note-box danger">
+                  <strong>Test purchase did not run</strong>
+                  <p>
+                    {latestTest.errorMessage ??
+                      "The request was blocked before any funds were moved."}
+                  </p>
+                </div>
               )}
               {state.executions[0]?.status === "PENDING_USER_APPROVAL" && (
                 <Link className="button button-primary" href="/dashboard">Approve test purchase</Link>

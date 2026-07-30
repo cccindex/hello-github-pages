@@ -12,7 +12,7 @@ import {
   setAutomationStatus,
   triggerSchedulerDelivery,
 } from "@/lib/service";
-import { ExecutionType } from "@prisma/client";
+import { ExecutionStatus, ExecutionType } from "@prisma/client";
 import { env } from "@/lib/env";
 import { selectRealPayboxWallet } from "@/lib/paybox/real-provider";
 import {
@@ -67,7 +67,16 @@ export async function POST(request: Request) {
         }
         break;
       case "run-test":
-        await createExecution(ExecutionType.TEST_PURCHASE);
+        const testExecution = await createExecution(ExecutionType.TEST_PURCHASE);
+        if (
+          testExecution.status === ExecutionStatus.BLOCKED_BY_POLICY ||
+          testExecution.status === ExecutionStatus.FAILED
+        ) {
+          throw new Error(
+            testExecution.errorMessage ??
+              "The test purchase was blocked before any funds were moved.",
+          );
+        }
         break;
       case "approve-test":
         await approveTestPurchase(input.executionId);

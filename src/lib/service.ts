@@ -91,26 +91,28 @@ export async function getLocalState(localUserId: string) {
     user.payboxConnection?.status === ConnectionStatus.CONNECTED &&
     hasRealPayboxAuthorization
   ) {
-    try {
-      wallets = await listRealPayboxWallets(localUserId);
-    } catch {
-      const connection = user.payboxConnection;
-      if (
-        connection.selectedCredentialId &&
-        connection.selectedWalletAddress &&
-        connection.selectedWalletName
-      ) {
-        wallets = [{
-          id: connection.selectedCredentialId,
-          name: connection.selectedWalletName,
-          address: connection.selectedWalletAddress,
-          granted: true,
-          chains: connection.selectedWalletChains,
-          approvalMode: connection.approvalMode ?? "ALWAYS_APPROVE",
-          usdcBalanceAtomic: connection.usdcBalanceAtomic.toString(),
-          cbbtcBalanceAtomic: connection.cbbtcBalanceAtomic.toString(),
-          solBalanceLamports: connection.solBalanceLamports.toString(),
-        }];
+    const connection = user.payboxConnection;
+    if (
+      connection.selectedCredentialId &&
+      connection.selectedWalletAddress &&
+      connection.selectedWalletName
+    ) {
+      wallets = [{
+        id: connection.selectedCredentialId,
+        name: connection.selectedWalletName,
+        address: connection.selectedWalletAddress,
+        granted: true,
+        chains: connection.selectedWalletChains,
+        approvalMode: connection.approvalMode ?? "ALWAYS_APPROVE",
+        usdcBalanceAtomic: connection.usdcBalanceAtomic.toString(),
+        cbbtcBalanceAtomic: connection.cbbtcBalanceAtomic.toString(),
+        solBalanceLamports: connection.solBalanceLamports.toString(),
+      }];
+    } else {
+      try {
+        wallets = await listRealPayboxWallets(localUserId);
+      } catch {
+        wallets = [];
       }
     }
   }

@@ -33,7 +33,9 @@ export default function SetupPage() {
                     <span><CircleDollarSign size={16} /><b>{Number(wallet.usdcBalanceAtomic) / 1e6}</b> USDC</span>
                     <span><Fuel size={16} /><b>{Number(wallet.solBalanceLamports) / 1e9}</b> SOL</span>
                   </div>
-                  <p className="wallet-network">Solana mainnet · Always approve initially</p>
+                  <p className="wallet-network">
+                    Solana mainnet · {wallet.approvalMode.replaceAll("_", " ").toLowerCase()}
+                  </p>
                   <Button
                     variant={selected === wallet.id ? "secondary" : "primary"}
                     disabled={!wallet.granted || selected === wallet.id || action.isPending}

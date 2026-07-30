@@ -9,7 +9,9 @@
 - Private keys and seed phrases are never accepted or stored.
 - Bearer tokens, authorization headers, and raw secrets must be redacted from
   provider responses and logs.
-- Paybox tokens must be encrypted before real mode stores them locally.
+- Paybox OAuth access and refresh tokens are encrypted with AES-256-GCM before
+  they are stored in Prisma Postgres.
+- The hosted single-owner interface requires HTTP Basic authentication.
 
-The local prototype is single-owner software. Do not expose its port to the
-public internet.
+The application is single-owner software. Do not remove owner authentication
+before adding a real multi-user identity and authorization model.

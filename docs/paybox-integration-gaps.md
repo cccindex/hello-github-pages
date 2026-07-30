@@ -7,14 +7,24 @@ Verified without authentication:
 - Authorization-code, refresh-token, PKCE S256, dynamic client registration,
   `mcp`, and `offline_access` are advertised.
 
-Still unverified:
+Verified through the authenticated MoonPay/Paybox connector:
 
-- Whether third-party client registration succeeds for this local redirect URI.
-- The Paybox user-consent and account-selection experience.
-- The authenticated `tools/list` response.
-- The existence and exact schemas of credential, portfolio, grant, swap,
-  request-polling, and revocation tools.
-- Stable mapping between the local owner and a Paybox user.
+- A granted Solana wallet and live portfolio balances are available.
+- Exact schemas for credential listing, portfolio reads, account changes,
+  swaps, signing, transfers, and request polling are exposed.
+- Coinbase's published Solana cbBTC mint matches the fixed application mint.
+
+Implemented for the hosted app:
+
+- Dynamic public client registration.
+- Authorization code with PKCE S256 and state validation.
+- Encrypted access/refresh-token storage and refresh.
+- Authenticated MCP initialization, tool discovery, credential listing, and
+  portfolio reads.
+
+Still unverified in the hosted OAuth client:
+
+- The final user-consent redirect and callback.
 - Offline refresh-token lifetime and autonomous signing behavior.
 - Whether provider-level idempotency is supported by `request_swap`.
 - Whether webhooks are available for grants, revocations, or request updates.

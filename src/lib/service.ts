@@ -17,6 +17,7 @@ import {
 import { env } from "@/lib/env";
 import { evaluatePolicy, isInFlight } from "@/lib/policy";
 import { mockPaybox } from "@/lib/paybox/mock-provider";
+import { listRealPayboxWallets } from "@/lib/paybox/real-provider";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -73,6 +74,14 @@ export async function getLocalState() {
     .filter((item) => item.createdAt >= sinceDay && (item.status === "SUCCESS" || item.isSpendReserved))
     .reduce((sum, item) => sum + item.displayAmountCents, 0);
   const lifetimeSpendCents = successful.reduce((sum, item) => sum + item.displayAmountCents, 0);
+  const hasRealPayboxAuthorization = Boolean(user.payboxConnection?.oauthAccessToken);
+  const wallets =
+    env.PAYBOX_MODE === "real"
+      ? user.payboxConnection?.status === ConnectionStatus.CONNECTED &&
+        hasRealPayboxAuthorization
+        ? await listRealPayboxWallets()
+        : []
+      : [...MOCK_WALLETS];
 
   return {
     mode: env.PAYBOX_MODE,
@@ -86,14 +95,24 @@ export async function getLocalState() {
     },
     connection: user.payboxConnection
       ? {
-          ...user.payboxConnection,
+          status:
+            env.PAYBOX_MODE === "real" && !hasRealPayboxAuthorization
+              ? ConnectionStatus.NOT_CONNECTED
+              : user.payboxConnection.status,
+          selectedCredentialId: user.payboxConnection.selectedCredentialId,
+          selectedWalletAddress: user.payboxConnection.selectedWalletAddress,
+          selectedWalletName: user.payboxConnection.selectedWalletName,
+          selectedWalletChains: user.payboxConnection.selectedWalletChains,
+          approvalMode: user.payboxConnection.approvalMode,
           usdcBalanceAtomic: user.payboxConnection.usdcBalanceAtomic.toString(),
           cbbtcBalanceAtomic: user.payboxConnection.cbbtcBalanceAtomic.toString(),
           solBalanceLamports: user.payboxConnection.solBalanceLamports.toString(),
+          connectedAt: user.payboxConnection.connectedAt,
+          lastSyncedAt: user.payboxConnection.lastSyncedAt,
         }
       : null,
     automation: user.automation,
-    wallets: MOCK_WALLETS,
+    wallets,
     metrics: {
       spendTodayCents,
       lifetimeSpendCents,
@@ -420,13 +439,24 @@ export async function setAutomationStatus(action: "pause" | "resume") {
 
 export async function revokeAccess() {
   const user = await ensureLocalUser();
-  if (user.payboxConnection?.selectedCredentialId) {
+  if (env.PAYBOX_MODE === "mock" && user.payboxConnection?.selectedCredentialId) {
     await mockPaybox.revokeGrant(user.payboxConnection.selectedCredentialId);
   }
   await db.$transaction([
     db.payboxConnection.update({
       where: { userId: user.id },
-      data: { status: ConnectionStatus.REVOKED, approvalMode: null },
+      data: {
+        status: ConnectionStatus.REVOKED,
+        approvalMode: null,
+        selectedCredentialId: null,
+        selectedWalletAddress: null,
+        selectedWalletName: null,
+        selectedWalletChains: [],
+        oauthAccessToken: null,
+        oauthRefreshToken: null,
+        oauthTokenExpiresAt: null,
+        oauthScopes: [],
+      },
     }),
     db.automation.update({
       where: { userId: user.id },

@@ -13,6 +13,8 @@ import {
   triggerSchedulerDelivery,
 } from "@/lib/service";
 import { ExecutionType } from "@prisma/client";
+import { env } from "@/lib/env";
+import { selectRealPayboxWallet } from "@/lib/paybox/real-provider";
 import {
   corsPreflight,
   rejectDisallowedOrigin,
@@ -52,10 +54,17 @@ export async function POST(request: Request) {
     const input = actionSchema.parse(await request.json());
     switch (input.action) {
       case "connect":
+        if (env.PAYBOX_MODE !== "mock") {
+          throw new Error("Use the Paybox OAuth connection flow.");
+        }
         await connectMockPaybox();
         break;
       case "select-wallet":
-        await selectMockWallet(input.credentialId);
+        if (env.PAYBOX_MODE === "real") {
+          await selectRealPayboxWallet(input.credentialId);
+        } else {
+          await selectMockWallet(input.credentialId);
+        }
         break;
       case "run-test":
         await createExecution(ExecutionType.TEST_PURCHASE);

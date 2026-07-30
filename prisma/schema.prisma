@@ -74,6 +74,10 @@ model PayboxConnection {
   selectedWalletName    String?
   selectedWalletChains  String[]
   approvalMode          ApprovalMode?
+  oauthAccessToken      String?
+  oauthRefreshToken     String?
+  oauthTokenExpiresAt   DateTime?
+  oauthScopes           String[]
   usdcBalanceAtomic     BigInt           @default(20000000)
   cbbtcBalanceAtomic    BigInt           @default(0)
   solBalanceLamports    BigInt           @default(50000000)

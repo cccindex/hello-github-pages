@@ -39,16 +39,22 @@ export default function ConnectPage() {
                   </p>
                   {!connected ? (
                     <div className="button-row">
-                      <Button
-                        onClick={() => action.mutate({ action: "connect" })}
-                        disabled={action.isPending}
-                      >
-                        <PlugZap size={17} /> Connect mock Paybox
-                      </Button>
+                      {state.mode === "real" ? (
+                        <Link className="button button-primary" href="/api/paybox/connect">
+                          <PlugZap size={17} /> Connect Paybox
+                        </Link>
+                      ) : (
+                        <Button
+                          onClick={() => action.mutate({ action: "connect" })}
+                          disabled={action.isPending}
+                        >
+                          <PlugZap size={17} /> Connect mock Paybox
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <div className="connected-box">
-                      <div><span>Provider</span><strong>Mock Paybox</strong></div>
+                      <div><span>Provider</span><strong>{state.mode === "real" ? "Paybox" : "Mock Paybox"}</strong></div>
                       <div><span>Connection</span><strong>Hosted session</strong></div>
                       <Link href="/setup">Choose wallet <ArrowRight size={15} /></Link>
                     </div>
@@ -58,8 +64,9 @@ export default function ConnectPage() {
               <div className="note-box">
                 <strong>Live connection status</strong>
                 <p>
-                  Paybox&apos;s OAuth 2.1 discovery endpoints are available. We will
-                  inspect authenticated MCP tools separately before enabling real mode.
+                  {state.mode === "real"
+                    ? "Paybox OAuth 2.1 is enabled. Real transfers remain locked until the wallet connection and safety checks are complete."
+                    : "Paybox OAuth 2.1 discovery endpoints are available. Real transfers remain disabled in mock mode."}
                 </p>
               </div>
             </div>

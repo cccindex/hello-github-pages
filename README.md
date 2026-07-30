@@ -3,9 +3,10 @@
 A narrow hosted prototype that swaps exactly 1 USDC into cbBTC on Solana every
 five minutes through a Paybox provider.
 
-The current working mode is `PAYBOX_MODE=mock`. Real financial execution is
-disabled and the real provider stops before creating a swap until authenticated
-Paybox MCP tools have been discovered and normalized.
+Production uses `PAYBOX_MODE=real` for a real Paybox OAuth 2.1 wallet
+connection and live portfolio reads. Real financial execution remains disabled,
+and the provider stops before creating a swap until the remaining real-money
+checks are complete.
 
 ## Hosted deployment
 
@@ -15,12 +16,13 @@ The production app runs as a full Next.js deployment on Vercel:
 - Prisma Postgres stores application state and the execution audit log.
 - A secured Vercel Cron Job checks due automations every five minutes.
 - `CRON_SECRET` authenticates scheduler invocations.
+- HTTP Basic authentication limits the single-owner application.
+- Paybox access and refresh tokens are encrypted with AES-256-GCM before storage.
 
 The hosted app does not require a developer computer, local PostgreSQL, a
 Cloudflare tunnel, or the local worker to remain online.
 
-Deployments must keep `PAYBOX_MODE=mock`,
-`ALLOW_REAL_FINANCIAL_EXECUTION=false`, and
+Deployments must keep `ALLOW_REAL_FINANCIAL_EXECUTION=false` and
 `ALLOW_REAL_RECURRING_EXECUTION=false` until the real-money checklist has been
 completed.
 

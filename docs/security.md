@@ -11,7 +11,7 @@
   provider responses and logs.
 - Paybox OAuth access and refresh tokens are encrypted with AES-256-GCM before
   they are stored in Prisma Postgres.
-- The hosted single-owner interface requires HTTP Basic authentication.
 
-The application is single-owner software. Do not remove owner authentication
-before adding a real multi-user identity and authorization model.
+The application is single-owner software. The current hosted prototype is
+public, so real financial execution must remain disabled until a proper
+multi-user identity and authorization model is added.

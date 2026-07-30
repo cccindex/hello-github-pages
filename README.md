@@ -16,7 +16,6 @@ The production app runs as a full Next.js deployment on Vercel:
 - Prisma Postgres stores application state and the execution audit log.
 - A secured Vercel Cron Job checks due automations every five minutes.
 - `CRON_SECRET` authenticates scheduler invocations.
-- HTTP Basic authentication limits the single-owner application.
 - Paybox access and refresh tokens are encrypted with AES-256-GCM before storage.
 
 The hosted app does not require a developer computer, local PostgreSQL, a

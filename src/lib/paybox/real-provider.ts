@@ -1,6 +1,6 @@
 import { ApprovalMode, AutomationStatus, ConnectionStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { LOCAL_USER_ID, PURCHASE_CONFIG } from "@/lib/constants";
+import { PURCHASE_CONFIG } from "@/lib/constants";
 import { PayboxMcpClient } from "@/lib/paybox/mcp-client";
 import { getPayboxAccessToken } from "@/lib/paybox/oauth";
 import type {
@@ -107,22 +107,28 @@ function normalizeRequest(result: ToolResult): PayboxExecutionRequest {
   };
 }
 
-async function initializedClient(accessToken?: string) {
-  const client = new PayboxMcpClient(accessToken ?? (await getPayboxAccessToken()));
+async function initializedClient(localUserId: string, accessToken?: string) {
+  const client = new PayboxMcpClient(
+    accessToken ?? (await getPayboxAccessToken(localUserId)),
+  );
   await client.initialize();
   return client;
 }
 
 export async function inspectRealPayboxTools(accessToken: string) {
-  const client = await initializedClient(accessToken);
+  const client = new PayboxMcpClient(accessToken);
+  await client.initialize();
   const result = (await client.listTools()) as {
     tools?: Array<{ name?: string }>;
   };
   return result.tools?.flatMap((tool) => (tool.name ? [tool.name] : [])) ?? [];
 }
 
-export async function listRealPayboxWallets(accessToken?: string): Promise<PayboxWallet[]> {
-  const client = await initializedClient(accessToken);
+export async function listRealPayboxWallets(
+  localUserId: string,
+  accessToken?: string,
+): Promise<PayboxWallet[]> {
+  const client = await initializedClient(localUserId, accessToken);
   const list = (await client.callTool("list_credentials")) as CredentialList;
   const credentials = (list.credentials ?? []).filter(
     (credential) =>
@@ -165,9 +171,12 @@ export async function listRealPayboxWallets(accessToken?: string): Promise<Paybo
   );
 }
 
-export async function completeRealPayboxConnection(accessToken: string) {
-  const wallets = await listRealPayboxWallets(accessToken);
-  const user = await db.user.findUniqueOrThrow({ where: { localUserId: LOCAL_USER_ID } });
+export async function completeRealPayboxConnection(
+  localUserId: string,
+  accessToken: string,
+) {
+  const wallets = await listRealPayboxWallets(localUserId, accessToken);
+  const user = await db.user.findUniqueOrThrow({ where: { localUserId } });
   await db.$transaction([
     db.payboxConnection.update({
       where: { userId: user.id },
@@ -186,11 +195,14 @@ export async function completeRealPayboxConnection(accessToken: string) {
   return wallets;
 }
 
-export async function selectRealPayboxWallet(credentialId: string) {
-  const wallets = await listRealPayboxWallets();
+export async function selectRealPayboxWallet(
+  localUserId: string,
+  credentialId: string,
+) {
+  const wallets = await listRealPayboxWallets(localUserId);
   const wallet = wallets.find((item) => item.id === credentialId);
   if (!wallet) throw new Error("Granted Solana wallet was not found in Paybox.");
-  const user = await db.user.findUniqueOrThrow({ where: { localUserId: LOCAL_USER_ID } });
+  const user = await db.user.findUniqueOrThrow({ where: { localUserId } });
   await db.$transaction([
     db.payboxConnection.update({
       where: { userId: user.id },
@@ -215,9 +227,10 @@ export async function selectRealPayboxWallet(credentialId: string) {
 }
 
 export async function requestRealPayboxSwap(
+  localUserId: string,
   input: SwapRequest,
 ): Promise<PayboxExecutionRequest> {
-  const client = await initializedClient();
+  const client = await initializedClient(localUserId);
   const result = (await client.callToolRaw("request_swap", {
     credential_id: input.credentialId,
     src_chain: input.chain,
@@ -232,17 +245,18 @@ export async function requestRealPayboxSwap(
 }
 
 export async function getRealPayboxRequest(
+  localUserId: string,
   requestId: string,
 ): Promise<PayboxExecutionRequest> {
-  const client = await initializedClient();
+  const client = await initializedClient(localUserId);
   const result = (await client.callToolRaw("get_request", {
     request_id: requestId,
   })) as ToolResult;
   return normalizeRequest(result);
 }
 
-export async function getPayboxSigningResource() {
-  const client = await initializedClient();
+export async function getPayboxSigningResource(localUserId: string) {
+  const client = await initializedClient(localUserId);
   return client.readResource(WALLET_SIGN_RESOURCE);
 }
 
@@ -255,10 +269,11 @@ const APP_TOOL_NAMES = new Set([
 ]);
 
 export async function callPayboxSigningTool(
+  localUserId: string,
   name: string,
   args: Record<string, unknown>,
 ) {
   if (!APP_TOOL_NAMES.has(name)) throw new Error("This Paybox app tool is not allowed.");
-  const client = await initializedClient();
+  const client = await initializedClient(localUserId);
   return client.callToolRaw(name, args);
 }

@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { LOCAL_USER_ID } from "@/lib/constants";
 import { decryptPayboxToken, encryptPayboxToken } from "@/lib/paybox/token-crypto";
 
 const TOKEN_ENDPOINT = "https://api.paybox.sh/oauth/token";
@@ -55,9 +54,9 @@ export async function exchangePayboxCode(code: string, verifier: string) {
   );
 }
 
-export async function savePayboxTokens(tokens: TokenResponse) {
+export async function savePayboxTokens(localUserId: string, tokens: TokenResponse) {
   const user = await db.user.findUniqueOrThrow({
-    where: { localUserId: LOCAL_USER_ID },
+    where: { localUserId },
     include: { payboxConnection: true },
   });
   const existingRefreshToken = user.payboxConnection?.oauthRefreshToken;
@@ -75,9 +74,9 @@ export async function savePayboxTokens(tokens: TokenResponse) {
   });
 }
 
-export async function getPayboxAccessToken() {
+export async function getPayboxAccessToken(localUserId: string) {
   const user = await db.user.findUniqueOrThrow({
-    where: { localUserId: LOCAL_USER_ID },
+    where: { localUserId },
     include: { payboxConnection: true },
   });
   const connection = user.payboxConnection;
@@ -98,6 +97,6 @@ export async function getPayboxAccessToken() {
       resource: MCP_RESOURCE,
     }),
   );
-  await savePayboxTokens(tokens);
+  await savePayboxTokens(localUserId, tokens);
   return tokens.access_token;
 }

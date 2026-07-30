@@ -34,7 +34,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <nav>
           {items.map(({ href, label, icon: Icon }) => (
-            <Link className={pathname === href ? "active" : ""} href={href} key={href}>
+            <Link
+              className={`${pathname === href ? "active" : ""} ${
+                href === "/connect" && data?.connection?.status !== "CONNECTED"
+                  ? "connect-nav-cta"
+                  : ""
+              }`}
+              href={href}
+              key={href}
+            >
               <Icon size={18} />
               <span>{label}</span>
             </Link>

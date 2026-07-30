@@ -9,7 +9,6 @@ import { addHours, subHours } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import {
-  LOCAL_USER_ID,
   MOCK_WALLETS,
   PURCHASE_CONFIG,
   SAFETY_LIMITS,
@@ -28,13 +27,13 @@ function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
-export async function ensureLocalUser() {
+export async function ensureLocalUser(localUserId: string) {
   return db.user.upsert({
-    where: { localUserId: LOCAL_USER_ID },
+    where: { localUserId },
     update: {},
     create: {
-      localUserId: LOCAL_USER_ID,
-      email: "local@five-minute-bitcoin.test",
+      localUserId,
+      email: null,
       payboxConnection: {
         create: {
           status: ConnectionStatus.NOT_CONNECTED,
@@ -57,8 +56,8 @@ export async function ensureLocalUser() {
   });
 }
 
-export async function getLocalState() {
-  const local = await ensureLocalUser();
+export async function getLocalState(localUserId: string) {
+  const local = await ensureLocalUser(localUserId);
   const user = await db.user.findUniqueOrThrow({
     where: { id: local.id },
     include: {
@@ -84,7 +83,7 @@ export async function getLocalState() {
     env.PAYBOX_MODE === "real"
       ? user.payboxConnection?.status === ConnectionStatus.CONNECTED &&
         hasRealPayboxAuthorization
-        ? await listRealPayboxWallets()
+        ? await listRealPayboxWallets(localUserId)
         : []
       : [...MOCK_WALLETS];
 
@@ -131,8 +130,8 @@ export async function getLocalState() {
   };
 }
 
-export async function connectMockPaybox() {
-  const user = await ensureLocalUser();
+export async function connectMockPaybox(localUserId: string) {
+  const user = await ensureLocalUser(localUserId);
   await db.$transaction([
     db.payboxConnection.update({
       where: { userId: user.id },
@@ -150,8 +149,8 @@ export async function connectMockPaybox() {
   ]);
 }
 
-export async function selectMockWallet(credentialId: string) {
-  const user = await ensureLocalUser();
+export async function selectMockWallet(localUserId: string, credentialId: string) {
+  const user = await ensureLocalUser(localUserId);
   const wallet = MOCK_WALLETS.find((item) => item.id === credentialId);
   if (!wallet) throw new Error("Wallet credential not found.");
   if (!wallet.granted) throw new Error("This mock wallet has not been granted yet.");
@@ -265,7 +264,7 @@ async function completeRealSuccessfulExecution(
     | Awaited<ReturnType<typeof listRealPayboxWallets>>[number]
     | undefined;
   try {
-    wallet = (await listRealPayboxWallets()).find(
+    wallet = (await listRealPayboxWallets(execution.user.localUserId)).find(
       (item) => item.id === connection.selectedCredentialId,
     );
   } catch {
@@ -329,10 +328,11 @@ async function completeRealSuccessfulExecution(
 }
 
 export async function createExecution(
+  localUserId: string,
   type: ExecutionType,
   scheduledFor = new Date(),
 ) {
-  const user = await ensureLocalUser();
+  const user = await ensureLocalUser(localUserId);
   const connection = user.payboxConnection!;
   const automation = user.automation!;
   const isTest = type === ExecutionType.TEST_PURCHASE;
@@ -420,7 +420,7 @@ export async function createExecution(
     provider =
       env.PAYBOX_MODE === "mock"
         ? await mockPaybox.requestSwap(swapInput)
-        : await requestRealPayboxSwap(swapInput);
+        : await requestRealPayboxSwap(localUserId, swapInput);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Paybox request failed before a response was stored.";
@@ -479,17 +479,19 @@ export async function createExecution(
   return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
 }
 
-export async function refreshExecution(executionId: string) {
+export async function refreshExecution(localUserId: string, executionId: string) {
   const execution = await db.execution.findUniqueOrThrow({
     where: { id: executionId },
+    include: { user: true },
   });
+  if (execution.user.localUserId !== localUserId) throw new Error("Execution not found.");
   if (!execution.providerRequestId) {
     throw new Error("This execution has no Paybox request to refresh.");
   }
   if (env.PAYBOX_MODE === "mock") return execution;
   if (!isInFlight(execution.status)) return execution;
 
-  const provider = await getRealPayboxRequest(execution.providerRequestId);
+  const provider = await getRealPayboxRequest(localUserId, execution.providerRequestId);
   if (provider.status === "SUCCESS") {
     await completeRealSuccessfulExecution(execution.id, provider);
     return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
@@ -518,8 +520,12 @@ export async function refreshExecution(executionId: string) {
   return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
 }
 
-export async function approveTestPurchase(executionId: string) {
-  const execution = await db.execution.findUniqueOrThrow({ where: { id: executionId } });
+export async function approveTestPurchase(localUserId: string, executionId: string) {
+  const execution = await db.execution.findUniqueOrThrow({
+    where: { id: executionId },
+    include: { user: true },
+  });
+  if (execution.user.localUserId !== localUserId) throw new Error("Execution not found.");
   if (
     execution.type !== ExecutionType.TEST_PURCHASE ||
     execution.status !== ExecutionStatus.PENDING_USER_APPROVAL ||
@@ -536,9 +542,9 @@ export async function approveTestPurchase(executionId: string) {
   );
 }
 
-export async function activateAutomation(confirmation: string) {
+export async function activateAutomation(localUserId: string, confirmation: string) {
   if (confirmation !== "ACTIVATE") throw new Error("Type ACTIVATE to continue.");
-  const user = await ensureLocalUser();
+  const user = await ensureLocalUser(localUserId);
   if (user.automation?.status !== AutomationStatus.READY) {
     throw new Error("Complete the successful test purchase first.");
   }
@@ -554,8 +560,11 @@ export async function activateAutomation(confirmation: string) {
   });
 }
 
-export async function setAutomationStatus(action: "pause" | "resume") {
-  const user = await ensureLocalUser();
+export async function setAutomationStatus(
+  localUserId: string,
+  action: "pause" | "resume",
+) {
+  const user = await ensureLocalUser(localUserId);
   const automation = user.automation!;
   if (action === "pause") {
     await db.automation.update({
@@ -576,8 +585,8 @@ export async function setAutomationStatus(action: "pause" | "resume") {
   });
 }
 
-export async function revokeAccess() {
-  const user = await ensureLocalUser();
+export async function revokeAccess(localUserId: string) {
+  const user = await ensureLocalUser(localUserId);
   if (env.PAYBOX_MODE === "mock" && user.payboxConnection?.selectedCredentialId) {
     await mockPaybox.revokeGrant(user.payboxConnection.selectedCredentialId);
   }
@@ -604,10 +613,10 @@ export async function revokeAccess() {
   ]);
 }
 
-export async function resetLocalData() {
-  const user = await db.user.findUnique({ where: { localUserId: LOCAL_USER_ID } });
+export async function resetLocalData(localUserId: string) {
+  const user = await db.user.findUnique({ where: { localUserId } });
   if (user) await db.user.delete({ where: { id: user.id } });
-  await ensureLocalUser();
+  await ensureLocalUser(localUserId);
 }
 
 export function nextFiveMinuteBoundary(now: Date) {
@@ -628,7 +637,12 @@ export async function runDueAutomations(now = new Date()) {
   const results = [];
   for (const automation of due) {
     const scheduledFor = automation.nextRunAt ?? now;
-    const result = await createExecution(ExecutionType.SCHEDULED_PURCHASE, scheduledFor);
+    const user = await db.user.findUniqueOrThrow({ where: { id: automation.userId } });
+    const result = await createExecution(
+      user.localUserId,
+      ExecutionType.SCHEDULED_PURCHASE,
+      scheduledFor,
+    );
     await db.automation.update({
       where: { id: automation.id },
       data: {
@@ -641,11 +655,18 @@ export async function runDueAutomations(now = new Date()) {
   return results;
 }
 
-export async function triggerSchedulerDelivery(scheduledFor?: Date) {
-  const user = await ensureLocalUser();
+export async function triggerSchedulerDelivery(
+  localUserId: string,
+  scheduledFor?: Date,
+) {
+  const user = await ensureLocalUser(localUserId);
   const automation = user.automation!;
   const deliveryTime = scheduledFor ?? automation.nextRunAt ?? nextFiveMinuteBoundary(new Date());
-  const result = await createExecution(ExecutionType.SCHEDULED_PURCHASE, deliveryTime);
+  const result = await createExecution(
+    localUserId,
+    ExecutionType.SCHEDULED_PURCHASE,
+    deliveryTime,
+  );
   await db.automation.update({
     where: { id: automation.id },
     data: {

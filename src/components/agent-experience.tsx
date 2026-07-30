@@ -458,14 +458,28 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
         <div className="wallet-state">
           <span className={connected ? "wallet-dot connected" : "wallet-dot"} />
           <span>{connected ? `${balance} USDC` : "Wallet offline"}</span>
-          <Link href={connected ? "/dashboard" : "/connect"}>
-            {connected ? <Gauge size={15} /> : <WalletCards size={15} />}
+          <Link
+            className={connected ? "" : "wallet-connect-cta"}
+            href={connected ? "/dashboard" : "/connect"}
+          >
+            {connected ? <Gauge size={15} /> : <><WalletCards size={15} /> Connect Paybox</>}
           </Link>
         </div>
       </header>
 
       <section className="experience-layout">
         <section className="experience-stage">
+          {data && !connected && (
+            <section className="room-onboarding">
+              <div className="room-onboarding-icon"><WalletCards size={22} /></div>
+              <div>
+                <span>NEW HERE? START WITH YOUR WALLET</span>
+                <strong>Connect Paybox before asking the agent to transact.</strong>
+                <p>No site login. Connect → choose a wallet → approve the visible $1 test.</p>
+              </div>
+              <Link href="/connect">Connect Paybox <ArrowRight size={16} /></Link>
+            </section>
+          )}
           <div className="experience-intro">
             <div>
               <p className="room-kicker"><span>{config.index}</span>{config.label}</p>

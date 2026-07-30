@@ -21,6 +21,10 @@ import {
   rejectDisallowedOrigin,
   withCors,
 } from "@/lib/cors";
+import {
+  resolveBrowserSession,
+  setBrowserSessionCookie,
+} from "@/lib/browser-session";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +35,12 @@ export async function OPTIONS(request: Request) {
 export async function GET(request: Request) {
   const rejected = rejectDisallowedOrigin(request);
   if (rejected) return rejected;
-  return withCors(request, NextResponse.json(await getLocalState()));
+  const session = resolveBrowserSession(request);
+  const response = withCors(
+    request,
+    NextResponse.json(await getLocalState(session.localUserId)),
+  );
+  return setBrowserSessionCookie(response, session);
 }
 
 const actionSchema = z.discriminatedUnion("action", [
@@ -53,23 +62,28 @@ export async function POST(request: Request) {
   const rejected = rejectDisallowedOrigin(request);
   if (rejected) return rejected;
   try {
+    const session = resolveBrowserSession(request);
+    const localUserId = session.localUserId;
     const input = actionSchema.parse(await request.json());
     switch (input.action) {
       case "connect":
         if (env.PAYBOX_MODE !== "mock") {
           throw new Error("Use the Paybox OAuth connection flow.");
         }
-        await connectMockPaybox();
+        await connectMockPaybox(localUserId);
         break;
       case "select-wallet":
         if (env.PAYBOX_MODE === "real") {
-          await selectRealPayboxWallet(input.credentialId);
+          await selectRealPayboxWallet(localUserId, input.credentialId);
         } else {
-          await selectMockWallet(input.credentialId);
+          await selectMockWallet(localUserId, input.credentialId);
         }
         break;
       case "run-test":
-        const testExecution = await createExecution(ExecutionType.TEST_PURCHASE);
+        const testExecution = await createExecution(
+          localUserId,
+          ExecutionType.TEST_PURCHASE,
+        );
         if (
           testExecution.status === ExecutionStatus.BLOCKED_BY_POLICY ||
           testExecution.status === ExecutionStatus.FAILED
@@ -81,34 +95,39 @@ export async function POST(request: Request) {
         }
         break;
       case "approve-test":
-        await approveTestPurchase(input.executionId);
+        await approveTestPurchase(localUserId, input.executionId);
         break;
       case "activate":
-        await activateAutomation(input.confirmation);
+        await activateAutomation(localUserId, input.confirmation);
         break;
       case "pause":
       case "resume":
-        await setAutomationStatus(input.action);
+        await setAutomationStatus(localUserId, input.action);
         break;
       case "revoke":
-        await revokeAccess();
+        await revokeAccess(localUserId);
         break;
       case "run-now":
-        await createExecution(ExecutionType.MANUAL_PURCHASE);
+        await createExecution(localUserId, ExecutionType.MANUAL_PURCHASE);
         break;
       case "run-scheduler":
         await triggerSchedulerDelivery(
+          localUserId,
           input.scheduledAt ? new Date(input.scheduledAt) : undefined,
         );
         break;
       case "refresh-execution":
-        await refreshExecution(input.executionId);
+        await refreshExecution(localUserId, input.executionId);
         break;
       case "reset":
-        await resetLocalData();
+        await resetLocalData(localUserId);
         break;
     }
-    return withCors(request, NextResponse.json(await getLocalState()));
+    const response = withCors(
+      request,
+      NextResponse.json(await getLocalState(localUserId)),
+    );
+    return setBrowserSessionCookie(response, session);
   } catch (error) {
     return withCors(
       request,

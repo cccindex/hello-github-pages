@@ -62,12 +62,16 @@ export default function Home() {
         </div>
       </header>
       <section className="rooms-hero">
-        <p>Four agents. Four links. One wallet.</p>
+        <p>Four agents. Four links. Your Paybox wallet.</p>
         <h1>Give the internet a budget.</h1>
         <p>
           Chat-first experiments where AI can investigate, debate, play and
           transact—while every paid action stays visible and bounded.
         </p>
+        <div className="rooms-start">
+          <Link href="/connect">Connect Paybox to start <ArrowRight size={17} /></Link>
+          <span>No app login · choose your wallet · run a visible $1 test</span>
+        </div>
       </section>
       <section className="rooms-grid">
         {rooms.map(({ index, route, label, title, description, icon: Icon, accent }) => (

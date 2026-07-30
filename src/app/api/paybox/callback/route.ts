@@ -9,6 +9,7 @@ import {
   completeRealPayboxConnection,
   inspectRealPayboxTools,
 } from "@/lib/paybox/real-provider";
+import { resolveBrowserSession } from "@/lib/browser-session";
 
 function finishRedirect(request: NextRequest, query: string) {
   const response = NextResponse.redirect(new URL(`/connect?${query}`, request.url));
@@ -18,6 +19,10 @@ function finishRedirect(request: NextRequest, query: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const session = resolveBrowserSession(request);
+  if (session.isNew) {
+    return finishRedirect(request, "paybox_error=session_cookie_missing");
+  }
   const error = request.nextUrl.searchParams.get("error");
   if (error) return finishRedirect(request, `paybox_error=${encodeURIComponent(error)}`);
 
@@ -30,14 +35,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await ensureLocalUser();
+    await ensureLocalUser(session.localUserId);
     const tokens = await exchangePayboxCode(code, verifier);
     const tools = await inspectRealPayboxTools(tokens.access_token);
     if (!tools.includes("list_credentials") || !tools.includes("get_portfolio")) {
       throw new Error("Paybox did not expose the required wallet tools.");
     }
-    await savePayboxTokens(tokens);
-    await completeRealPayboxConnection(tokens.access_token);
+    await savePayboxTokens(session.localUserId, tokens);
+    await completeRealPayboxConnection(session.localUserId, tokens.access_token);
     return finishRedirect(request, "paybox=connected");
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "Paybox connection failed.";

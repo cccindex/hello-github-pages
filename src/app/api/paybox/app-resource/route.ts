@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getPayboxSigningResource } from "@/lib/paybox/real-provider";
+import { resolveBrowserSession } from "@/lib/browser-session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const resource = (await getPayboxSigningResource()) as {
+    const session = resolveBrowserSession(request);
+    if (session.isNew) throw new Error("Connect Paybox first.");
+    const resource = (await getPayboxSigningResource(session.localUserId)) as {
       contents?: Array<{
         text?: string;
         blob?: string;

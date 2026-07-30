@@ -124,6 +124,26 @@ export async function inspectRealPayboxTools(accessToken: string) {
   return result.tools?.flatMap((tool) => (tool.name ? [tool.name] : [])) ?? [];
 }
 
+export async function describeRealPayboxTools(localUserId: string) {
+  const client = await initializedClient(localUserId);
+  const result = (await client.listTools()) as {
+    tools?: Array<{
+      name?: string;
+      description?: string;
+      inputSchema?: unknown;
+    }>;
+  };
+  return (result.tools ?? []).flatMap((tool) =>
+    tool.name
+      ? [{
+          name: tool.name,
+          description: tool.description ?? "",
+          inputSchema: tool.inputSchema ?? {},
+        }]
+      : [],
+  );
+}
+
 export async function listRealPayboxWallets(
   localUserId: string,
   accessToken?: string,

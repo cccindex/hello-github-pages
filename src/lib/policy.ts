@@ -78,7 +78,13 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   add("no-in-flight", !input.hasInFlightExecution, "No other purchase is financially in flight.");
   add("unique-delivery", !input.idempotencyKeyExists, "Idempotency key is unused.");
   add("project-enabled", input.projectExecutionEnabled, "Project execution is enabled.");
-  add("financial-mode", input.financialExecutionEnabled, "Current execution mode permits this request.");
+  add(
+    "financial-mode",
+    input.financialExecutionEnabled,
+    input.financialExecutionEnabled
+      ? "Current execution mode permits this request."
+      : "Real financial execution is disabled in this public prototype.",
+  );
   add("usdc-balance", input.usdcBalanceAtomic >= 1_000_000n, "Wallet has at least 1 USDC.");
   add("sol-balance", input.solBalanceLamports >= 5_000n, "Wallet appears to have enough SOL for fees.", "UNKNOWN");
 

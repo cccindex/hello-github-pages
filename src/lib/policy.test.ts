@@ -33,6 +33,14 @@ describe("purchase policy", () => {
     expect(evaluatePolicy(valid()).allowed).toBe(true);
   });
 
+  it("explains when real financial execution is disabled", () => {
+    const decision = evaluatePolicy(valid({ financialExecutionEnabled: false }));
+    expect(decision.allowed).toBe(false);
+    expect(decision.reasons).toContain(
+      "Real financial execution is disabled in this public prototype.",
+    );
+  });
+
   it.each([
     ["wrong amount", { amountAtomic: "2000000" }],
     ["wrong source mint", { sourceMint: "wrong" }],

@@ -24,7 +24,8 @@ import {
   WalletCards,
   Zap,
 } from "lucide-react";
-import { useProductState } from "@/lib/client-state";
+import { useProductAction, useProductState, type ProductState } from "@/lib/client-state";
+import { PayboxSigningApp } from "@/components/paybox-signing-app";
 
 export type ExperienceKind = "trade" | "intel" | "duel" | "quest";
 
@@ -32,6 +33,7 @@ type ChatMessage = {
   role: "agent" | "user";
   text: string;
   meta?: string;
+  action?: "trade" | "automation";
 };
 
 type ExperienceConfig = {
@@ -64,7 +66,7 @@ const EXPERIENCES: Record<ExperienceKind, ExperienceConfig> = {
       "Find one interesting trade",
       "What changed in the last hour?",
       "Spend 25¢ researching BTC",
-      "Build a $5 experimental basket",
+      "Automate $1 every five minutes",
     ],
     initialMessages: [
       {
@@ -82,6 +84,8 @@ const EXPERIENCES: Record<ExperienceKind, ExperienceConfig> = {
         "I’d allocate 8¢ to exchange flows, 6¢ to options skew and keep 11¢ unspent unless they disagree. The best agents buy only the missing evidence.",
       "Build a $5 experimental basket":
         "I’d split the experiment: $2 BTC momentum, $1 cbBTC accumulation, $1 stablecoin reserve and $1 uncommitted for a second signal. Each leg needs its own stop condition.",
+      "Automate $1 every five minutes":
+        "I can propose the existing bounded automation: exactly 1 USDC into cbBTC every five minutes, a $12 rolling-day cap, $25 lifetime cap and automatic expiry after 24 hours.",
     },
   },
   intel: {
@@ -193,10 +197,15 @@ const roomLinks = (Object.keys(EXPERIENCES) as ExperienceKind[]).map((kind) => E
 export function AgentExperience({ kind }: { kind: ExperienceKind }) {
   const config = EXPERIENCES[kind];
   const { data } = useProductState();
+  const productAction = useProductAction();
   const [messages, setMessages] = useState<ChatMessage[]>(config.initialMessages);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [activity, setActivity] = useState(0);
+  const [reviewAction, setReviewAction] = useState<"trade" | "automation" | null>(null);
+  const [submittedExecution, setSubmittedExecution] =
+    useState<ProductState["executions"][number] | null>(null);
+  const [actionResult, setActionResult] = useState("");
 
   const connected = data?.connection?.status === "CONNECTED";
   const balance = data?.connection?.usdcBalanceAtomic
@@ -212,9 +221,25 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
       const reply =
         config.replies[prompt] ??
         `I’d break “${prompt.trim()}” into evidence, cost and action. I can investigate within a fixed budget, show every source, and ask before any real transaction.`;
+      const messageAction =
+        kind === "trade" &&
+        (prompt === "Find one interesting trade" ||
+          prompt === "Build the trade plan" ||
+          prompt.toLowerCase().includes("buy exactly $1"))
+          ? "trade"
+          : prompt === "Automate $1 every five minutes"
+            ? "automation"
+            : kind === "duel" && prompt === "Let the winner place $1"
+              ? "trade"
+              : undefined;
       setMessages((current) => [
         ...current,
-        { role: "agent", text: reply, meta: "Agent response · no transaction" },
+        {
+          role: "agent",
+          text: reply,
+          meta: messageAction ? "Action ready · nothing executed yet" : "Agent response · no transaction",
+          action: messageAction,
+        },
       ]);
       setActivity((value) => value + 1);
       setIsThinking(false);
@@ -224,6 +249,60 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     ask(input);
+  };
+
+  const beginTrade = async () => {
+    setActionResult("");
+    try {
+      const nextState = await productAction.mutateAsync({ action: "run-now" });
+      const execution = nextState.executions[0] ?? null;
+      setSubmittedExecution(execution);
+      if (!execution) {
+        setActionResult("No execution was created.");
+      } else if (
+        ["BLOCKED_BY_POLICY", "FAILED", "DENIED", "SKIPPED_PREVIOUS_EXECUTION_PENDING"].includes(
+          execution.status,
+        )
+      ) {
+        setActionResult(execution.errorMessage ?? `Trade stopped: ${execution.status.replaceAll("_", " ")}.`);
+      } else if (execution.status === "SUCCESS") {
+        setActionResult("Trade completed successfully.");
+      } else {
+        setActionResult("Trade request created. Complete the Paybox signing step below.");
+      }
+    } catch (error) {
+      setActionResult(error instanceof Error ? error.message : "The trade could not be created.");
+    }
+  };
+
+  const activate = async () => {
+    setActionResult("");
+    try {
+      const nextState = await productAction.mutateAsync({
+        action: "activate",
+        confirmation: "ACTIVATE",
+      });
+      setActionResult(
+        nextState.realRecurringExecutionEnabled
+          ? "Automation activated."
+          : "Automation saved, but real recurring execution remains disabled on the server.",
+      );
+    } catch (error) {
+      setActionResult(error instanceof Error ? error.message : "Automation could not be activated.");
+    }
+  };
+
+  const refreshSubmittedExecution = async () => {
+    if (!submittedExecution) return;
+    const nextState = await productAction.mutateAsync({
+      action: "refresh-execution",
+      executionId: submittedExecution.id,
+    });
+    const refreshed = nextState.executions.find((item) => item.id === submittedExecution.id) ?? null;
+    setSubmittedExecution(refreshed);
+    if (refreshed?.status === "SUCCESS") {
+      setActionResult("Trade completed successfully.");
+    }
   };
 
   const workspace = (() => {
@@ -291,6 +370,17 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
                 <div>
                   <p>{message.text}</p>
                   {message.meta && <small>{message.meta}</small>}
+                  {message.action && (
+                    <ChatActionCard
+                      type={message.action}
+                      automationStatus={data?.automation?.status ?? "NOT READY"}
+                      onReview={() => {
+                        setSubmittedExecution(null);
+                        setActionResult("");
+                        setReviewAction(message.action ?? null);
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             ))}
@@ -337,7 +427,121 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
           </form>
         </aside>
       </section>
+
+      {reviewAction && (
+        <div className="action-review-backdrop" role="presentation">
+          <section className="action-review" role="dialog" aria-modal="true" aria-label={`Review ${reviewAction}`}>
+            <div className="action-review-head">
+              <div>
+                <span>{reviewAction === "trade" ? "REAL TRANSACTION" : "RECURRING POLICY"}</span>
+                <h2>{reviewAction === "trade" ? "Confirm this $1 trade" : "Confirm this automation"}</h2>
+              </div>
+              <button onClick={() => setReviewAction(null)} aria-label="Close review">×</button>
+            </div>
+
+            {reviewAction === "trade" ? (
+              <>
+                <div className="review-swap">
+                  <div><span>YOU SPEND</span><strong>1.00 <small>USDC</small></strong></div>
+                  <ArrowRight size={20} />
+                  <div><span>YOU RECEIVE</span><strong>cbBTC <small>quoted by Paybox</small></strong></div>
+                </div>
+                <div className="review-facts">
+                  <span><b>Network</b>Solana mainnet</span>
+                  <span><b>Maximum slippage</b>1.00%</span>
+                  <span><b>Wallet</b>{data?.connection?.selectedWalletName ?? "Not selected"}</span>
+                </div>
+                {!submittedExecution && (
+                  <button className="confirm-real-action" onClick={beginTrade} disabled={productAction.isPending}>
+                    {productAction.isPending ? "Creating Paybox request…" : "Confirm and create $1 trade"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="automation-review-grid">
+                  <div><span>AMOUNT</span><strong>1 USDC</strong></div>
+                  <div><span>FREQUENCY</span><strong>Every 5 minutes</strong></div>
+                  <div><span>ROLLING DAY</span><strong>Maximum $12</strong></div>
+                  <div><span>EXPIRY</span><strong>After 24 hours</strong></div>
+                </div>
+                <div className="automation-policy-note">
+                  <ShieldCheck size={17} />
+                  <p>
+                    Current status: <b>{data?.automation?.status ?? "UNKNOWN"}</b>.{" "}
+                    {data?.realRecurringExecutionEnabled
+                      ? "Real recurring execution is enabled."
+                      : "The server switch for real recurring execution is currently off."}
+                  </p>
+                </div>
+                {data?.automation?.status === "READY" ? (
+                  <button className="confirm-real-action" onClick={activate} disabled={productAction.isPending}>
+                    {productAction.isPending ? "Activating…" : "Confirm automation"}
+                  </button>
+                ) : data?.automation?.status === "ACTIVE" ? (
+                  <Link className="confirm-real-action" href="/dashboard">Automation is active · open controls</Link>
+                ) : (
+                  <Link className="confirm-real-action" href="/setup">Complete the $1 test first</Link>
+                )}
+              </>
+            )}
+
+            {actionResult && <p className="action-result">{actionResult}</p>}
+
+            {reviewAction === "trade" &&
+              submittedExecution &&
+              data?.mode === "real" &&
+              ["PENDING_SIGNATURE", "PENDING_USER_APPROVAL", "PENDING_CONFIRMATION", "PENDING_SETTLEMENT"].includes(
+                submittedExecution.status,
+              ) &&
+              data.connection?.selectedCredentialId && (
+                <div className="inline-paybox-signer">
+                  <PayboxSigningApp
+                    executionId={submittedExecution.id}
+                    credentialId={data.connection.selectedCredentialId}
+                    toolResult={submittedExecution.providerResponseJson ?? {}}
+                    onRequestChanged={refreshSubmittedExecution}
+                  />
+                </div>
+              )}
+          </section>
+        </div>
+      )}
     </main>
+  );
+}
+
+function ChatActionCard({
+  type,
+  automationStatus,
+  onReview,
+}: {
+  type: "trade" | "automation";
+  automationStatus: string;
+  onReview: () => void;
+}) {
+  return (
+    <div className={`chat-action-card ${type}`}>
+      <div className="chat-action-label">
+        {type === "trade" ? <Zap size={13} /> : <Radio size={13} />}
+        {type === "trade" ? "PROPOSED TRADE" : "PROPOSED AUTOMATION"}
+      </div>
+      {type === "trade" ? (
+        <>
+          <div className="chat-action-swap"><strong>1 USDC</strong><ArrowRight size={14} /><strong>cbBTC</strong></div>
+          <span>Solana · maximum 1% slippage</span>
+          <button onClick={onReview}>Review and confirm <ChevronRight size={14} /></button>
+        </>
+      ) : (
+        <>
+          <div className="chat-action-swap"><strong>$1</strong><ArrowRight size={14} /><strong>Every 5 min</strong></div>
+          <span>$12 daily · $25 lifetime · 24h expiry</span>
+          <button onClick={onReview}>
+            {automationStatus === "ACTIVE" ? "View automation" : "Review automation"} <ChevronRight size={14} />
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 

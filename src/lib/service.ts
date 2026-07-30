@@ -21,7 +21,7 @@ import {
   listRealPayboxWallets,
   requestRealPayboxSwap,
 } from "@/lib/paybox/real-provider";
-import type { PayboxExecutionRequest } from "@/lib/paybox/provider";
+import type { PayboxExecutionRequest, PayboxWallet } from "@/lib/paybox/provider";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -79,13 +79,41 @@ export async function getLocalState(localUserId: string) {
     .reduce((sum, item) => sum + item.displayAmountCents, 0);
   const lifetimeSpendCents = successful.reduce((sum, item) => sum + item.displayAmountCents, 0);
   const hasRealPayboxAuthorization = Boolean(user.payboxConnection?.oauthAccessToken);
-  const wallets =
+  let wallets: PayboxWallet[] =
     env.PAYBOX_MODE === "real"
-      ? user.payboxConnection?.status === ConnectionStatus.CONNECTED &&
-        hasRealPayboxAuthorization
-        ? await listRealPayboxWallets(localUserId)
-        : []
-      : [...MOCK_WALLETS];
+      ? []
+      : MOCK_WALLETS.map((wallet) => ({
+          ...wallet,
+          chains: [...wallet.chains],
+        }));
+  if (
+    env.PAYBOX_MODE === "real" &&
+    user.payboxConnection?.status === ConnectionStatus.CONNECTED &&
+    hasRealPayboxAuthorization
+  ) {
+    try {
+      wallets = await listRealPayboxWallets(localUserId);
+    } catch {
+      const connection = user.payboxConnection;
+      if (
+        connection.selectedCredentialId &&
+        connection.selectedWalletAddress &&
+        connection.selectedWalletName
+      ) {
+        wallets = [{
+          id: connection.selectedCredentialId,
+          name: connection.selectedWalletName,
+          address: connection.selectedWalletAddress,
+          granted: true,
+          chains: connection.selectedWalletChains,
+          approvalMode: connection.approvalMode ?? "ALWAYS_APPROVE",
+          usdcBalanceAtomic: connection.usdcBalanceAtomic.toString(),
+          cbbtcBalanceAtomic: connection.cbbtcBalanceAtomic.toString(),
+          solBalanceLamports: connection.solBalanceLamports.toString(),
+        }];
+      }
+    }
+  }
 
   return {
     mode: env.PAYBOX_MODE,

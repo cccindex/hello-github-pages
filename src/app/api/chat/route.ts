@@ -12,6 +12,18 @@ const requestSchema = z.object({
     walletSelected: z.boolean(),
     realFinancialExecutionEnabled: z.boolean(),
     marketContext: z.string().max(8_000).optional(),
+    worldMarkets: z
+      .array(
+        z.object({
+          ticker: z.string().min(1).max(160),
+          title: z.string().min(1).max(400),
+          yesMint: z.string().min(32).max(64),
+          noMint: z.string().min(32).max(64),
+          yesPrice: z.number().min(0).max(1).nullable(),
+        }),
+      )
+      .max(20)
+      .optional(),
   }),
   messages: z
     .array(
@@ -27,7 +39,7 @@ const requestSchema = z.object({
 const aiResponseSchema = z.object({
   reply: z.string().min(1).max(4_000),
   transaction: z.object({
-    type: z.enum(["none", "swap", "transfer"]),
+    type: z.enum(["none", "swap", "transfer", "world_buy"]),
     title: z.string(),
     rationale: z.string(),
     sourceSymbol: z.string().nullable(),
@@ -36,6 +48,8 @@ const aiResponseSchema = z.object({
     amount: z.number().nullable(),
     recipient: z.string().nullable(),
     slippageBps: z.number().int().nullable(),
+    marketTicker: z.string().nullable(),
+    outcome: z.enum(["YES", "NO"]).nullable(),
   }),
 });
 
@@ -52,7 +66,7 @@ function responseSchema() {
           transaction: {
             type: "object",
             properties: {
-              type: { type: "string", enum: ["none", "swap", "transfer"] },
+              type: { type: "string", enum: ["none", "swap", "transfer", "world_buy"] },
               title: { type: "string" },
               rationale: { type: "string" },
               sourceSymbol: { type: ["string", "null"] },
@@ -61,6 +75,8 @@ function responseSchema() {
               amount: { type: ["number", "null"] },
               recipient: { type: ["string", "null"] },
               slippageBps: { type: ["integer", "null"] },
+              marketTicker: { type: ["string", "null"] },
+              outcome: { type: ["string", "null"], enum: ["YES", "NO", null] },
             },
             required: [
               "type",
@@ -72,6 +88,8 @@ function responseSchema() {
               "amount",
               "recipient",
               "slippageBps",
+              "marketTicker",
+              "outcome",
             ],
             additionalProperties: false,
           },
@@ -99,10 +117,22 @@ export async function POST(request: Request) {
           `${asset.symbol} (${asset.name}; ${asset.decimals} decimals; mint ${asset.mint}; ${asset.priceUsd ? `$${asset.priceUsd}` : "price unavailable"})`,
       )
       .join("\n");
+    const worldMarkets = input.context.worldMarkets ?? [];
+    const worldCatalog = worldMarkets
+      .map(
+        (market) =>
+          `${market.ticker}: ${market.title}; YES midpoint=${market.yesPrice ?? "unavailable"}`,
+      )
+      .join("\n");
     const system = [
-      "You are Milo, a concise Solana transaction and market-research agent connected to Paybox.",
-      "You can formulate two real Paybox operations: exact-in Solana token swaps and Solana token transfers. You never execute automatically; the UI always presents the exact plan for explicit confirmation and Paybox signing.",
+      input.kind === "predictions"
+        ? "You are Oracle, a concise prediction-market research and transaction agent connected to Paybox."
+        : "You are Milo, a concise Solana transaction and market-research agent connected to Paybox.",
+      "You can formulate real Paybox operations: exact-in Solana token swaps, Solana token transfers, and World prediction-outcome buys. You never execute automatically; the chat always presents the exact plan for explicit confirmation and Paybox signing.",
       `Verified asset catalog:\n${assets}`,
+      worldCatalog
+        ? `Live World market catalog:\n${worldCatalog}`
+        : "No World markets are available in this conversation.",
       `Connection state: Paybox connected=${input.context.payboxConnected}; wallet selected=${input.context.walletSelected}; execution enabled=${input.context.realFinancialExecutionEnabled}.`,
       input.context.marketContext
         ? `Live market context supplied by the server:\n${input.context.marketContext}`
@@ -110,6 +140,7 @@ export async function POST(request: Request) {
       "Only create a transaction when the user's latest message clearly asks to swap, buy, sell, or transfer and specifies every necessary fact. Never invent an amount, recipient, asset, mint, or side.",
       "For swaps, both symbols must exactly match the verified catalog. Selling an asset means sourceSymbol is that asset and destinationSymbol is USDC. Buying means USDC is normally the source.",
       "For transfers, the recipient must be a Solana base58 address copied from the user's message and tokenSymbol must exactly match the catalog.",
+      "For World buys, marketTicker must exactly match the live World catalog, outcome must be YES or NO, and amount is the USDC spend. Never invent a market or outcome mint.",
       "Use 1.0% slippage (100 bps) unless the user explicitly requests another value; never exceed 3%. Keep every proposed transaction at or below $25 for this testing build.",
       "If anything is ambiguous or the wallet is not ready, set type=none, explain what is missing, and use empty strings/nulls for unused fields.",
       "Do not claim a trade is good merely because it can be executed. Separate market evidence from speculation. Keep the reply under 150 words.",
@@ -190,6 +221,32 @@ export async function POST(request: Request) {
         amount: action.amount,
         recipient: action.recipient,
         valueCents,
+      });
+    } else if (action.type === "world_buy") {
+      if (
+        !action.marketTicker ||
+        !action.outcome ||
+        !action.amount ||
+        !action.slippageBps
+      ) {
+        throw new Error("The AI returned an incomplete World trade plan.");
+      }
+      const market = worldMarkets.find(
+        (item) => item.ticker === action.marketTicker,
+      );
+      if (!market) throw new Error("The AI selected a World market outside the live feed.");
+      const valueCents = Math.max(1, Math.round(action.amount * 100));
+      plan = transactionPlanSchema.parse({
+        type: "world_buy",
+        title: `Buy ${action.outcome}: ${market.title}`,
+        rationale: action.rationale,
+        valueCents,
+        marketTicker: market.ticker,
+        marketTitle: market.title,
+        outcome: action.outcome,
+        marketMint: action.outcome === "YES" ? market.yesMint : market.noMint,
+        amountUsdc: action.amount,
+        slippageBps: action.slippageBps,
       });
     }
 

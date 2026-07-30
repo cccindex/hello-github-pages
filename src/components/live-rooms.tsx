@@ -15,7 +15,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { TransactionPlan } from "@/lib/action-plan";
 import {
   useProductAction,
@@ -220,8 +220,7 @@ function TransactionReview({
   };
 
   return (
-    <div className="transaction-modal-backdrop">
-      <section className="transaction-modal">
+      <section className="inline-transaction-review">
         <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <span className="eyebrow">REAL PAYBOX TRANSACTION</span>
         <h2>{plan.title}</h2>
@@ -270,7 +269,6 @@ function TransactionReview({
             />
           )}
       </section>
-    </div>
   );
 }
 
@@ -295,6 +293,7 @@ export function TradeRoom() {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [review, setReview] = useState<TransactionPlan | null>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadStocks().then(setFeed).catch(() => undefined);
@@ -304,6 +303,12 @@ export function TradeRoom() {
       window.history.replaceState({}, "", "/trade");
     }
   }, []);
+
+  useEffect(() => {
+    const element = messagesRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+  }, [messages, review, thinking]);
 
   const ask = async (text: string) => {
     const prompt = text.trim();
@@ -403,7 +408,7 @@ export function TradeRoom() {
             <span><strong>Milo</strong><small><i /> Paybox transaction agent</small></span>
             <b>LIVE AI</b>
           </header>
-          <div className="transaction-messages">
+          <div className="transaction-messages" ref={messagesRef}>
             {messages.map((message, index) => (
               <article className={message.role} key={index}>
                 <p>{message.content}</p>
@@ -427,6 +432,13 @@ export function TradeRoom() {
                 ].map((prompt) => <button onClick={() => ask(prompt)} key={prompt}>{prompt}</button>)}
               </div>
             )}
+            {review && (
+              <TransactionReview
+                key={review.title}
+                plan={review}
+                onClose={() => setReview(null)}
+              />
+            )}
             {thinking && <div className="thinking"><i /><i /><i /></div>}
           </div>
           <form onSubmit={submit}>
@@ -446,7 +458,6 @@ export function TradeRoom() {
           </form>
         </section>
       </section>
-      {review && <TransactionReview plan={review} onClose={() => setReview(null)} />}
     </RoomShell>
   );
 }
@@ -525,6 +536,22 @@ export function PredictionsRoom() {
   const [payload, setPayload] = useState<{ asOf: string; markets: Array<Record<string, unknown>> } | null>(null);
   const [error, setError] = useState("");
   const [review, setReview] = useState<TransactionPlan | null>(null);
+  const [worldInput, setWorldInput] = useState("");
+  const [worldThinking, setWorldThinking] = useState(false);
+  const worldMessagesRef = useRef<HTMLDivElement>(null);
+  const [worldMessages, setWorldMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "I’m grounded in the live World markets on this page. Ask me to compare probabilities, challenge a valuation, or prepare an exact YES/NO trade.",
+      meta: "Oracle · live World context",
+    },
+  ]);
+  useEffect(() => {
+    const element = worldMessagesRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+  }, [worldMessages, review, worldThinking]);
   const refresh = async () => {
     setError("");
     try {
@@ -587,25 +614,115 @@ export function PredictionsRoom() {
     [payload],
   );
 
-  const trade = (card: (typeof cards)[number], outcome: "YES" | "NO") => {
+  const buildWorldPlan = (
+    card: (typeof cards)[number],
+    outcome: "YES" | "NO",
+    amountUsdc = 1,
+  ): TransactionPlan | null => {
     const mint = outcome === "YES" ? card.yesMint : card.noMint;
     if (!mint) {
       setError("Paybox did not return an outcome mint for this market.");
-      return;
+      return null;
     }
     const implied = card.yesPrice === null ? "The live order book is the source of truth." : `YES is currently near ${(card.yesPrice * (card.yesPrice <= 1 ? 100 : 1)).toFixed(1)}¢.`;
-    setReview({
+    return {
       type: "world_buy",
       title: `Buy ${outcome}: ${card.title}`,
       rationale: `${implied} This is a hypothesis from the live World market structure, not a guaranteed valuation.`,
-      valueCents: 100,
+      valueCents: Math.round(amountUsdc * 100),
       marketTicker: card.ticker,
       marketTitle: card.title,
       outcome,
       marketMint: mint,
-      amountUsdc: 1,
+      amountUsdc,
       slippageBps: 100,
-    });
+    };
+  };
+
+  const trade = (card: (typeof cards)[number], outcome: "YES" | "NO") => {
+    const plan = buildWorldPlan(card, outcome);
+    if (!plan) return;
+    setWorldMessages((current) => [
+      ...current,
+      { role: "user", content: `Prepare a $1 ${outcome} trade on ${card.title}.` },
+      {
+        role: "assistant",
+        content: `I prepared the exact ${outcome} outcome purchase from the live World market. Review the price thesis and Paybox request below.`,
+        meta: "World action ready",
+        plan,
+      },
+    ]);
+    setReview(plan);
+  };
+
+  const askWorld = async (text: string) => {
+    const prompt = text.trim();
+    if (!prompt || worldThinking || !data || cards.length === 0) return;
+    const nextMessages = [
+      ...worldMessages,
+      { role: "user" as const, content: prompt },
+    ];
+    setWorldMessages(nextMessages);
+    setWorldInput("");
+    setWorldThinking(true);
+    try {
+      const worldMarkets = cards.map((card) => ({
+        ticker: card.ticker,
+        title: card.title,
+        yesMint: card.yesMint,
+        noMint: card.noMint,
+        yesPrice: card.yesPrice,
+      }));
+      const marketContext = cards
+        .map(
+          (card) =>
+            `${card.ticker}: ${card.title}; YES=${card.yesPrice ?? "no quote"}; ${card.analysis?.label ?? "unrated"}; ${card.analysis?.reason ?? ""}`,
+        )
+        .join("\n");
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "predictions",
+          context: {
+            payboxConnected: data.connection?.status === "CONNECTED",
+            walletSelected: Boolean(data.connection?.selectedCredentialId),
+            realFinancialExecutionEnabled: data.realFinancialExecutionEnabled,
+            marketContext,
+            worldMarkets,
+          },
+          messages: nextMessages.slice(-18).map(({ role, content }) => ({ role, content })),
+        }),
+      });
+      const body = (await response.json()) as {
+        message?: string;
+        plan?: TransactionPlan | null;
+        model?: string;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(body.error ?? "World AI request failed.");
+      setWorldMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: body.message ?? "I could not complete that World analysis.",
+          plan: body.plan,
+          meta: `OpenRouter · ${body.model ?? "live model"}`,
+        },
+      ]);
+    } catch (caught) {
+      setWorldMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            caught instanceof Error ? caught.message : "The World AI request failed.",
+          meta: "Nothing executed",
+        },
+      ]);
+    } finally {
+      setWorldThinking(false);
+    }
   };
 
   return (
@@ -625,12 +742,13 @@ export function PredictionsRoom() {
         {error && <p className="feed-error">{error}</p>}
         {!payload && !error && <div className="feed-loading"><Loader2 className="spin" /> Reading World order books…</div>}
         {payload && (
-          <>
-            <div className="feed-method">
-              <span>LIVE THROUGH PAYBOX · {new Date(payload.asOf).toLocaleTimeString()}</span>
-              <p>“Under/overvalued” is an agent screen based on the live spread and order-book balance; it is a thesis to investigate, not a fact.</p>
-            </div>
-            <section className="prediction-grid">
+          <section className="prediction-room-grid">
+            <div className="prediction-feed-column">
+              <div className="feed-method">
+                <span>LIVE THROUGH PAYBOX · {new Date(payload.asOf).toLocaleTimeString()}</span>
+                <p>“Under/overvalued” is an agent screen based on the live spread and order-book balance; it is a thesis to investigate, not a fact.</p>
+              </div>
+              <section className="prediction-grid">
               {cards.map((card, index) => {
                 const probability =
                   card.yesPrice === null
@@ -662,11 +780,76 @@ export function PredictionsRoom() {
                   </article>
                 );
               })}
+              </section>
+            </div>
+            <section className="transaction-chat world-chat">
+              <header>
+                <div><Bot size={18} /></div>
+                <span><strong>Oracle</strong><small><i /> World market agent</small></span>
+                <b>LIVE AI</b>
+              </header>
+              <div className="transaction-messages" ref={worldMessagesRef}>
+                {worldMessages.map((message, index) => (
+                  <article className={message.role} key={index}>
+                    <p>{message.content}</p>
+                    {message.meta && <small>{message.meta}</small>}
+                    {message.plan && (
+                      <button
+                        className="inline-plan"
+                        onClick={() => setReview(message.plan ?? null)}
+                      >
+                        <span><ShieldCheck size={15} /> World trade ready</span>
+                        <strong>{planSummary(message.plan).left} → {planSummary(message.plan).right}</strong>
+                        <em>Review here in chat <ArrowRight size={14} /></em>
+                      </button>
+                    )}
+                  </article>
+                ))}
+                {worldMessages.length === 1 && (
+                  <div className="chat-prompts">
+                    {[
+                      "Which YES looks cheapest?",
+                      "Which market has the strongest liquidity?",
+                      "Challenge the top agent valuation",
+                      cards[0] ? `Prepare $1 YES on ${cards[0].title}` : "",
+                    ].filter(Boolean).map((prompt) => (
+                      <button onClick={() => askWorld(prompt)} key={prompt}>{prompt}</button>
+                    ))}
+                  </div>
+                )}
+                {review && (
+                  <TransactionReview
+                    key={`${review.title}:${review.valueCents}`}
+                    plan={review}
+                    onClose={() => setReview(null)}
+                  />
+                )}
+                {worldThinking && <div className="thinking"><i /><i /><i /></div>}
+              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  askWorld(worldInput);
+                }}
+              >
+                <textarea
+                  value={worldInput}
+                  onChange={(event) => setWorldInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      askWorld(worldInput);
+                    }
+                  }}
+                  placeholder="Ask Oracle about these live markets…"
+                  rows={2}
+                />
+                <button disabled={!worldInput.trim() || worldThinking}><Send size={17} /></button>
+              </form>
             </section>
-          </>
+          </section>
         )}
       </section>
-      {review && <TransactionReview plan={review} onClose={() => setReview(null)} />}
     </RoomShell>
   );
 }

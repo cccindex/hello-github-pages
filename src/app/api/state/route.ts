@@ -5,6 +5,7 @@ import {
   approveTestPurchase,
   connectMockPaybox,
   createExecution,
+  createPlannedExecution,
   getLocalState,
   refreshExecution,
   resetLocalData,
@@ -25,6 +26,7 @@ import {
   resolveBrowserSession,
   setBrowserSessionCookie,
 } from "@/lib/browser-session";
+import { transactionPlanSchema } from "@/lib/action-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +55,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resume") }),
   z.object({ action: z.literal("revoke") }),
   z.object({ action: z.literal("run-now") }),
+  z.object({ action: z.literal("execute-plan"), plan: transactionPlanSchema }),
   z.object({ action: z.literal("run-scheduler"), scheduledAt: z.string().datetime().optional() }),
   z.object({ action: z.literal("refresh-execution"), executionId: z.string() }),
   z.object({ action: z.literal("reset") }),
@@ -109,6 +112,9 @@ export async function POST(request: Request) {
         break;
       case "run-now":
         await createExecution(localUserId, ExecutionType.MANUAL_PURCHASE);
+        break;
+      case "execute-plan":
+        await createPlannedExecution(localUserId, input.plan);
         break;
       case "run-scheduler":
         await triggerSchedulerDelivery(

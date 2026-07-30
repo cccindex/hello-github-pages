@@ -124,24 +124,37 @@ export async function inspectRealPayboxTools(accessToken: string) {
   return result.tools?.flatMap((tool) => (tool.name ? [tool.name] : [])) ?? [];
 }
 
-export async function describeRealPayboxTools(localUserId: string) {
+const READ_ONLY_TOOL_NAMES = new Set([
+  "get_portfolio",
+  "list_requests",
+  "world_filter_outcome_mints",
+  "world_find_markets",
+  "world_get_market",
+  "world_market_prices",
+  "world_orderbook",
+  "world_positions",
+]);
+
+export async function callRealPayboxReadTool(
+  localUserId: string,
+  name: string,
+  args: Record<string, unknown> = {},
+) {
+  if (!READ_ONLY_TOOL_NAMES.has(name)) {
+    throw new Error("This Paybox read tool is not allowed.");
+  }
   const client = await initializedClient(localUserId);
-  const result = (await client.listTools()) as {
-    tools?: Array<{
-      name?: string;
-      description?: string;
-      inputSchema?: unknown;
-    }>;
-  };
-  return (result.tools ?? []).flatMap((tool) =>
-    tool.name
-      ? [{
-          name: tool.name,
-          description: tool.description ?? "",
-          inputSchema: tool.inputSchema ?? {},
-        }]
-      : [],
-  );
+  return client.callToolRaw(name, args);
+}
+
+export async function requestRealPayboxAction(
+  localUserId: string,
+  name: "request_swap" | "request_transfer" | "world_buy_outcome",
+  args: Record<string, unknown>,
+): Promise<PayboxExecutionRequest> {
+  const client = await initializedClient(localUserId);
+  const result = (await client.callToolRaw(name, args)) as ToolResult;
+  return normalizeRequest(result);
 }
 
 export async function listRealPayboxWallets(

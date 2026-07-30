@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { AgentExperience } from "@/components/agent-experience";
+import { StocksRoom } from "@/components/live-rooms";
 
 export const metadata: Metadata = {
-  title: "Research Hunter · Paybox Rooms",
-  description: "An AI research agent that purchases only the evidence it needs.",
+  title: "Solana xStocks Feed · Paybox Rooms",
+  description: "A live, agent-ready feed for tokenized stocks on Solana.",
 };
 
 export default function IntelPage() {
-  return <AgentExperience kind="intel" />;
+  return <StocksRoom />;
 }

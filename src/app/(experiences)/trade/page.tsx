@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AgentExperience } from "@/components/agent-experience";
+import { TradeRoom } from "@/components/live-rooms";
 
 export const metadata: Metadata = {
   title: "Signal Desk · Paybox Rooms",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function TradePage() {
-  return <AgentExperience kind="trade" />;
+  return <TradeRoom />;
 }

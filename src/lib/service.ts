@@ -14,17 +14,59 @@ import {
   SAFETY_LIMITS,
 } from "@/lib/constants";
 import { env } from "@/lib/env";
+import {
+  atomicAmount,
+  transactionPlanSchema,
+  type TokenDefinition,
+  type TransactionPlan,
+} from "@/lib/action-plan";
+import { getLiveStockFeed, stockTokens } from "@/lib/live-stocks";
 import { evaluatePolicy, isInFlight } from "@/lib/policy";
 import { mockPaybox } from "@/lib/paybox/mock-provider";
 import {
+  callRealPayboxReadTool,
   getRealPayboxRequest,
   listRealPayboxWallets,
+  requestRealPayboxAction,
   requestRealPayboxSwap,
 } from "@/lib/paybox/real-provider";
 import type { PayboxExecutionRequest, PayboxWallet } from "@/lib/paybox/provider";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
+}
+
+const CORE_TOKENS: TokenDefinition[] = [
+  {
+    symbol: "USDC",
+    name: "USD Coin",
+    mint: PURCHASE_CONFIG.sourceToken.mint,
+    decimals: 6,
+    priceUsd: 1,
+    source: "Circle",
+  },
+  {
+    symbol: "cbBTC",
+    name: "Coinbase Wrapped BTC",
+    mint: PURCHASE_CONFIG.destinationToken.mint,
+    decimals: 8,
+    source: "Coinbase",
+  },
+  {
+    symbol: "SOL",
+    name: "Solana",
+    mint: "native",
+    decimals: 9,
+    source: "Solana",
+  },
+];
+
+export async function getTransactionTokenCatalog() {
+  try {
+    return [...CORE_TOKENS, ...stockTokens(await getLiveStockFeed())];
+  } catch {
+    return CORE_TOKENS;
+  }
 }
 
 export async function ensureLocalUser(localUserId: string) {
@@ -507,6 +549,218 @@ export async function createExecution(
     }
   }
 
+  return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
+}
+
+export async function createPlannedExecution(
+  localUserId: string,
+  rawPlan: TransactionPlan,
+) {
+  if (env.PAYBOX_MODE !== "real") {
+    throw new Error("General transaction plans require the real Paybox connection.");
+  }
+  if (!env.PROJECT_EXECUTION_ENABLED || !env.ALLOW_REAL_FINANCIAL_EXECUTION) {
+    throw new Error("Real transaction execution is disabled on the server.");
+  }
+
+  const plan = transactionPlanSchema.parse(rawPlan);
+  const user = await ensureLocalUser(localUserId);
+  const connection = user.payboxConnection!;
+  if (
+    connection.status !== ConnectionStatus.CONNECTED ||
+    !connection.selectedCredentialId ||
+    !connection.selectedWalletChains.includes("solana:mainnet")
+  ) {
+    throw new Error("Connect and select a granted Solana wallet first.");
+  }
+  const counts = await countsFor(user.id);
+  if (counts.hasInFlight) {
+    throw new Error("Finish the existing Paybox request before creating another transaction.");
+  }
+
+  const catalog = await getTransactionTokenCatalog();
+  const token = (symbol: string) => {
+    const match = catalog.find(
+      (item) => item.symbol.toLowerCase() === symbol.toLowerCase(),
+    );
+    if (!match) throw new Error(`${symbol} is not in the verified transaction catalog.`);
+    return match;
+  };
+
+  let toolName: "request_swap" | "request_transfer" | "world_buy_outcome";
+  let toolInput: Record<string, unknown>;
+  let amountAtomic: string;
+  let displayAmountCents: number;
+
+  if (plan.type === "swap") {
+    const source = token(plan.sourceSymbol);
+    const destination = token(plan.destinationSymbol);
+    if (source.mint === destination.mint) throw new Error("Choose two different assets.");
+    amountAtomic = atomicAmount(
+      plan.amount / (source.multiplier ?? 1),
+      source.decimals,
+    );
+    displayAmountCents = Math.max(
+      1,
+      Math.round(plan.amount * (source.priceUsd ?? plan.valueCents / 100) * 100),
+    );
+    toolName = "request_swap";
+    toolInput = {
+      credential_id: connection.selectedCredentialId,
+      src_chain: "solana:mainnet",
+      src_token: source.mint,
+      dst_token: destination.mint,
+      amount: amountAtomic,
+      swap_direction: "exact-amount-in",
+      slippage_bps: plan.slippageBps,
+      value_cents: displayAmountCents,
+    };
+    if (
+      source.symbol === "USDC" &&
+      BigInt(amountAtomic) > connection.usdcBalanceAtomic
+    ) {
+      throw new Error("The selected wallet does not have enough USDC.");
+    }
+  } else if (plan.type === "transfer") {
+    const asset = token(plan.tokenSymbol);
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(plan.recipient)) {
+      throw new Error("The recipient is not a valid Solana address.");
+    }
+    amountAtomic = atomicAmount(
+      plan.amount / (asset.multiplier ?? 1),
+      asset.decimals,
+    );
+    displayAmountCents = Math.max(
+      1,
+      Math.round(plan.amount * (asset.priceUsd ?? plan.valueCents / 100) * 100),
+    );
+    toolName = "request_transfer";
+    toolInput = {
+      credential_id: connection.selectedCredentialId,
+      chain: "solana:mainnet",
+      to: plan.recipient,
+      amount: amountAtomic,
+      ...(asset.mint === "native" ? {} : { token: asset.mint }),
+      value_cents: displayAmountCents,
+    };
+  } else {
+    const marketCheck = await callRealPayboxReadTool(
+      localUserId,
+      "world_orderbook",
+      { id: plan.marketMint, by_mint: true },
+    ) as { isError?: boolean; content?: Array<{ text?: string }> };
+    if (marketCheck.isError) {
+      throw new Error(
+        marketCheck.content?.find((item) => item.text)?.text ??
+          "Paybox could not verify this World outcome mint.",
+      );
+    }
+    amountAtomic = atomicAmount(plan.amountUsdc, 6);
+    displayAmountCents = Math.round(plan.amountUsdc * 100);
+    if (BigInt(amountAtomic) > connection.usdcBalanceAtomic) {
+      throw new Error("The selected wallet does not have enough USDC.");
+    }
+    toolName = "world_buy_outcome";
+    toolInput = {
+      credential_id: connection.selectedCredentialId,
+      market_mint: plan.marketMint,
+      size: amountAtomic,
+      slippage_bps: plan.slippageBps,
+      value_cents: displayAmountCents,
+    };
+  }
+
+  if (displayAmountCents > 2500) {
+    throw new Error("This testing build caps each confirmed transaction at $25.");
+  }
+
+  const idempotencyKey = `planned:${user.automation!.id}:${randomUUID()}`;
+  const execution = await db.execution.create({
+    data: {
+      userId: user.id,
+      automationId: user.automation!.id,
+      type: ExecutionType.MANUAL_PURCHASE,
+      idempotencyKey,
+      status: ExecutionStatus.EVALUATING_POLICY,
+      amountAtomic,
+      displayAmountCents,
+      policyDecisionJson: asJson({
+        allowed: true,
+        plan,
+        toolName,
+        toolInput,
+        checks: [
+          { key: "wallet", passed: true, message: "Granted Solana wallet selected." },
+          { key: "amount", passed: true, message: "Transaction is within the $25 test cap." },
+          { key: "review", passed: true, message: "User confirmed the exact visible plan." },
+        ],
+      }),
+      transitions: {
+        create: {
+          toStatus: ExecutionStatus.EVALUATING_POLICY,
+          note: `Validated ${toolName} plan and bound it to the selected Paybox wallet.`,
+        },
+      },
+    },
+  });
+
+  let provider: PayboxExecutionRequest;
+  try {
+    provider = await requestRealPayboxAction(
+      localUserId,
+      toolName,
+      toolInput,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Paybox did not return a conclusive response.";
+    await db.execution.update({
+      where: { id: execution.id },
+      data: {
+        status: ExecutionStatus.UNKNOWN,
+        errorCode: "PROVIDER_RESPONSE_UNKNOWN",
+        errorMessage: message,
+        isSpendReserved: true,
+      },
+    });
+    await transition(
+      execution.id,
+      ExecutionStatus.EVALUATING_POLICY,
+      ExecutionStatus.UNKNOWN,
+      "The provider response was inconclusive; the action will not be submitted again.",
+    );
+    throw error;
+  }
+
+  const raw =
+    provider.raw && typeof provider.raw === "object" && !Array.isArray(provider.raw)
+      ? provider.raw as Record<string, unknown>
+      : { payboxResult: provider.raw ?? provider };
+  await db.execution.update({
+    where: { id: execution.id },
+    data: {
+      providerRequestId: provider.requestId,
+      status: provider.status,
+      isSpendReserved: !["FAILED", "DENIED"].includes(provider.status),
+      providerResponseJson: asJson({
+        ...raw,
+        _host: { plan, toolName, toolInput },
+      }),
+      completedAt: ["FAILED", "DENIED"].includes(provider.status)
+        ? new Date()
+        : null,
+    },
+  });
+  await transition(
+    execution.id,
+    ExecutionStatus.EVALUATING_POLICY,
+    provider.status,
+    `Exactly one ${toolName} request was created in Paybox.`,
+  );
+
+  if (provider.status === "SUCCESS") {
+    await completeRealSuccessfulExecution(execution.id, provider);
+  }
   return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
 }
 

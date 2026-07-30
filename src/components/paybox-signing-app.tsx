@@ -17,11 +17,13 @@ export function PayboxSigningApp({
   executionId,
   credentialId,
   toolResult,
+  actionInput,
   onRequestChanged,
 }: {
   executionId: string;
   credentialId: string;
   toolResult: Record<string, unknown>;
+  actionInput?: Record<string, unknown>;
   onRequestChanged: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -29,7 +31,7 @@ export function PayboxSigningApp({
   const [height, setHeight] = useState(720);
   const [error, setError] = useState("");
   const toolInput = useMemo(
-    () => ({
+    () => actionInput ?? ({
       credential_id: credentialId,
       src_chain: PURCHASE_CONFIG.chain,
       src_token: PURCHASE_CONFIG.sourceToken.mint,
@@ -39,7 +41,7 @@ export function PayboxSigningApp({
       slippage_bps: PURCHASE_CONFIG.slippageBps,
       value_cents: PURCHASE_CONFIG.displayAmountCents,
     }),
-    [credentialId],
+    [actionInput, credentialId],
   );
   onRequestChangedRef.current = onRequestChanged;
 

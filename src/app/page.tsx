@@ -3,47 +3,37 @@ import {
   ArrowRight,
   Bot,
   FlaskConical,
-  Search,
+  LineChart,
+  Radio,
   Sparkles,
-  Swords,
-  Target,
 } from "lucide-react";
 
 const rooms = [
   {
     index: "01",
     route: "/trade",
-    label: "Signal desk",
-    title: "Trade the signal",
-    description: "A live market desk that reads free and paid feeds, challenges its own thesis, and builds a bounded trade.",
+    label: "AI transact",
+    title: "Say the transaction",
+    description: "Chat with an AI that resolves verified assets, composes the proper Paybox operation, and shows the full transaction before signing.",
     icon: Bot,
     accent: "#f0ff6a",
   },
   {
     index: "02",
     route: "/intel",
-    label: "Research hunter",
-    title: "Buy the evidence",
-    description: "Give an agent a question and a tiny budget. Watch it decide which x402 sources are actually worth paying for.",
-    icon: Search,
+    label: "Stock RSA feed",
+    title: "Read the xStocks tape",
+    description: "Live Solana tokenized-stock prices, volume, liquidity and issuer-price gaps ranked for agent research.",
+    icon: LineChart,
     accent: "#ff815c",
   },
   {
     index: "03",
-    route: "/duel",
-    label: "Agent arena",
-    title: "Make agents argue",
-    description: "Two opposing strategies face the same market. Evidence quality—not personality—decides who earns the trade.",
-    icon: Swords,
-    accent: "#9f8cff",
-  },
-  {
-    index: "04",
-    route: "/quest",
-    label: "Onchain quest",
-    title: "Follow the money",
-    description: "Play a five-minute crypto mystery where your agent purchases clues and traces behavior across the chain.",
-    icon: Target,
+    route: "/predictions",
+    label: "World markets",
+    title: "Trade the probability",
+    description: "Live prediction markets, order-book-driven valuation screens, and exact YES/NO outcome trades through Paybox.",
+    icon: Radio,
     accent: "#64e6c4",
   },
 ];
@@ -62,11 +52,11 @@ export default function Home() {
         </div>
       </header>
       <section className="rooms-hero">
-        <p>Four agents. Four links. Your Paybox wallet.</p>
+        <p>Three live rooms. One Paybox wallet.</p>
         <h1>Give the internet a budget.</h1>
         <p>
-          Chat-first experiments where AI can investigate, debate, play and
-          transact—while every paid action stays visible and bounded.
+          Live market research and chat-first execution where every real action
+          stays visible, bounded, and signed through Paybox.
         </p>
         <div className="rooms-start">
           <Link href="/connect">Connect Paybox to start <ArrowRight size={17} /></Link>

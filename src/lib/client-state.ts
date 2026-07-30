@@ -64,6 +64,9 @@ export type ProductState = {
       allowed?: boolean;
       reasons?: string[];
       checks?: Array<{ key: string; passed: boolean; message: string }>;
+      plan?: import("@/lib/action-plan").TransactionPlan;
+      toolName?: string;
+      toolInput?: Record<string, unknown>;
     };
     errorMessage: string | null;
     createdAt: string;
@@ -90,7 +93,7 @@ export function useProductState() {
 export function useProductAction() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (input: Record<string, string>) => {
+    mutationFn: async (input: Record<string, unknown>) => {
       const response = await fetch(`${API_BASE_URL}/api/state`, {
         method: "POST",
         headers: { "content-type": "application/json" },

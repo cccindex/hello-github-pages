@@ -1,11 +1,28 @@
 # Five Minute Bitcoin
 
-A narrow local prototype that swaps exactly 1 USDC into cbBTC on Solana every
+A narrow hosted prototype that swaps exactly 1 USDC into cbBTC on Solana every
 five minutes through a Paybox provider.
 
 The current working mode is `PAYBOX_MODE=mock`. Real financial execution is
 disabled and the real provider stops before creating a swap until authenticated
 Paybox MCP tools have been discovered and normalized.
+
+## Hosted deployment
+
+The production app runs as a full Next.js deployment on Vercel:
+
+- Next.js pages and API route handlers run on Vercel.
+- Prisma Postgres stores application state and the execution audit log.
+- A secured Vercel Cron Job checks due automations every five minutes.
+- `CRON_SECRET` authenticates scheduler invocations.
+
+The hosted app does not require a developer computer, local PostgreSQL, a
+Cloudflare tunnel, or the local worker to remain online.
+
+Deployments must keep `PAYBOX_MODE=mock`,
+`ALLOW_REAL_FINANCIAL_EXECUTION=false`, and
+`ALLOW_REAL_RECURRING_EXECUTION=false` until the real-money checklist has been
+completed.
 
 ## Run locally
 
@@ -26,29 +43,14 @@ pnpm dev
 
 Open http://localhost:3000.
 
-The GitHub Pages frontend can also be opened from the same computer. Because
-browsers block an HTTPS Pages site from reading a plain HTTP localhost response,
-start a temporary HTTPS tunnel:
-
-```bash
-cloudflared tunnel --url http://localhost:3000
-```
-
-Paste the resulting `https://…trycloudflare.com` address into the Pages
-frontend. The address is stored only in that browser. The local Next.js server,
-PostgreSQL, worker, and tunnel must remain running.
-
-Quick tunnels are for mock testing only. Do not enable real financial execution
-through a public quick-tunnel URL.
-
-In another terminal, start the local scheduler:
+For local-only scheduler testing, run:
 
 ```bash
 pnpm worker
 ```
 
-Your computer must remain awake and both processes must remain running for
-scheduled executions.
+This worker is only needed for local development. Production scheduling is
+handled by Vercel Cron.
 
 ## Mock demo
 
@@ -58,10 +60,11 @@ scheduled executions.
 4. Approve the pending purchase from the dashboard.
 5. Type `ACTIVATE`.
 6. Use **Run one now** for the shared manual execution path.
-7. Leave `pnpm worker` running to process actual five-minute due times.
+7. Leave `pnpm worker` running locally, or use the hosted Vercel Cron Job, to
+   process actual five-minute due times.
 8. Inspect every policy check and state transition in **Activity**.
 
-Reset all local demo data from **Settings**.
+Reset all demo data from **Settings**.
 
 ## Tests
 

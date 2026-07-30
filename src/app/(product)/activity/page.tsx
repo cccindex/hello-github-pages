@@ -12,7 +12,7 @@ export default function ActivityPage() {
       {(state) => (
         <div className="page">
           <div className="page-heading split">
-            <div><p className="eyebrow">Immutable local record</p><h1>Activity</h1><p>Successful, pending, blocked, skipped, and failed executions.</p></div>
+            <div><p className="eyebrow">Persistent hosted record</p><h1>Activity</h1><p>Successful, pending, blocked, skipped, and failed executions.</p></div>
             <span className="record-count">{state.executions.length} events</span>
           </div>
           <Card className="activity-card">

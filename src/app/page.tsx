@@ -16,7 +16,7 @@ export default function Home() {
     <main className="landing">
       <header className="landing-nav">
         <div className="brand"><span className="brand-mark">₿</span> Five Minute Bitcoin</div>
-        <span className="local-pill">Local prototype</span>
+        <span className="local-pill">Hosted prototype</span>
       </header>
       <section className="hero">
         <div className="hero-copy">
@@ -29,7 +29,7 @@ export default function Home() {
           </p>
           <div className="button-row">
             <Link href="/connect" className="button button-primary">
-              Start local setup <ArrowRight size={17} />
+              Start setup <ArrowRight size={17} />
             </Link>
             <a href="#how" className="button button-secondary">See how it works</a>
           </div>

@@ -9,12 +9,12 @@ export default function SettingsPage() {
     <WithState>
       {(state, action) => (
         <div className="page">
-          <div className="page-heading"><p className="eyebrow">Local configuration</p><h1>Settings</h1><p>Identity, connection, fixed limits, and emergency controls.</p></div>
+          <div className="page-heading"><p className="eyebrow">Hosted configuration</p><h1>Settings</h1><p>Identity, connection, fixed limits, and emergency controls.</p></div>
           <div className="settings-grid">
             <Card>
               <div className="section-head"><h2>Identity & connection</h2><Badge status={state.connection?.status ?? "NOT CONNECTED"} /></div>
               <dl className="settings-list">
-                <div><dt>Local identity</dt><dd>{state.user.email}</dd></div>
+                <div><dt>Application identity</dt><dd>{state.user.email}</dd></div>
                 <div><dt>Paybox provider</dt><dd>{state.mode === "mock" ? "Mock Paybox" : "Real Paybox"}</dd></div>
                 <div><dt>Selected credential</dt><dd><Address>{state.connection?.selectedCredentialId}</Address></dd></div>
                 <div><dt>Wallet</dt><dd>{state.connection?.selectedWalletName ?? "Not selected"}<br /><Address>{state.connection?.selectedWalletAddress}</Address></dd></div>
@@ -34,7 +34,7 @@ export default function SettingsPage() {
             </Card>
           </div>
           <Card className="danger-zone">
-            <div><p className="eyebrow">Emergency controls</p><h2>Stop or reset</h2><p>Revoking preserves the audit log. Resetting deletes all local demo records.</p></div>
+            <div><p className="eyebrow">Emergency controls</p><h2>Stop or reset</h2><p>Revoking preserves the audit log. Resetting deletes all hosted demo records.</p></div>
             <div className="button-row">
               <Button variant="danger" onClick={() => action.mutate({ action: "revoke" })}><ShieldOff size={16} /> Revoke wallet access</Button>
               <Button variant="secondary" onClick={() => action.mutate({ action: "reset" })}><RotateCcw size={16} /> Reset demo data</Button>

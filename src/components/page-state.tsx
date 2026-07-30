@@ -1,14 +1,8 @@
 "use client";
 
 import { AlertTriangle, LoaderCircle } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import {
-  getApiBaseUrl,
-  saveApiBaseUrl,
-  useProductAction,
-  useProductState,
-} from "@/lib/client-state";
-import { Button } from "@/components/ui";
+import { type ReactNode } from "react";
+import { useProductAction, useProductState } from "@/lib/client-state";
 
 export function WithState({
   children,
@@ -20,37 +14,16 @@ export function WithState({
 }) {
   const query = useProductState();
   const action = useProductAction();
-  const [backendUrl, setBackendUrl] = useState(() => getApiBaseUrl());
   if (query.isLoading) {
-    return <div className="center-state"><LoaderCircle className="spin" /> Loading local data…</div>;
+    return <div className="center-state"><LoaderCircle className="spin" /> Loading application data…</div>;
   }
   if (query.error || !query.data) {
     return (
-      <div className="center-state backend-setup">
+      <div className="center-state error">
         <AlertTriangle />
-        <strong>Connect this page to your computer</strong>
-        <span>
-          Start the local backend and its HTTPS tunnel, then paste the tunnel
-          address below. It is saved only in this browser.
-        </span>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            saveApiBaseUrl(backendUrl);
-            window.location.reload();
-          }}
-        >
-          <input
-            aria-label="Local backend tunnel URL"
-            placeholder="https://example.trycloudflare.com"
-            type="url"
-            value={backendUrl}
-            onChange={(event) => setBackendUrl(event.target.value)}
-            required
-          />
-          <Button type="submit">Connect backend</Button>
-        </form>
-        <small>{query.error?.message ?? "Backend unavailable."}</small>
+        <strong>Service temporarily unavailable</strong>
+        <span>The hosted API or database could not be reached. Please retry shortly.</span>
+        <small>{query.error?.message ?? "Application unavailable."}</small>
       </div>
     );
   }

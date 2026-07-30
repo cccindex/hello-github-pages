@@ -46,7 +46,7 @@ export default function DashboardPage() {
           <div className="page">
             <div className="page-heading split">
               <div>
-                <p className="eyebrow">Local control room</p>
+                <p className="eyebrow">Hosted control room</p>
                 <h1>Your automation</h1>
                 <p>One wallet. One fixed swap. Every event recorded.</p>
               </div>

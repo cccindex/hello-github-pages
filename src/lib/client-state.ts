@@ -1,17 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const API_URL_STORAGE_KEY = "five-minute-bitcoin-api-url";
-
-export function getApiBaseUrl() {
-  if (typeof window === "undefined") return DEFAULT_API_BASE_URL;
-  return window.localStorage.getItem(API_URL_STORAGE_KEY) ?? DEFAULT_API_BASE_URL;
-}
-
-export function saveApiBaseUrl(value: string) {
-  const normalized = value.trim().replace(/\/+$/, "");
-  window.localStorage.setItem(API_URL_STORAGE_KEY, normalized);
-}
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export type ProductState = {
   mode: "mock" | "real";
@@ -87,8 +76,8 @@ export type ProductState = {
 };
 
 async function loadState(): Promise<ProductState> {
-  const response = await fetch(`${getApiBaseUrl()}/api/state`);
-  if (!response.ok) throw new Error("Could not load local state.");
+  const response = await fetch(`${API_BASE_URL}/api/state`);
+  if (!response.ok) throw new Error("Could not load application state.");
   return response.json();
 }
 
@@ -100,7 +89,7 @@ export function useProductAction() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (input: Record<string, string>) => {
-      const response = await fetch(`${getApiBaseUrl()}/api/state`, {
+      const response = await fetch(`${API_BASE_URL}/api/state`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),

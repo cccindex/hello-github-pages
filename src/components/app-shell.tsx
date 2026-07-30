@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="sidebar-foot">
           <Badge status={data?.mode === "real" ? "REAL MODE" : "MOCK MODE"} />
-          <small>Local data only</small>
+          <small>Hosted private database</small>
         </div>
       </aside>
       <main className="app-content">{children}</main>

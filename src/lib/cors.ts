@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 const allowedOrigins = new Set([
   "http://localhost:3000",
   "http://127.0.0.1:3000",
-  "https://cccindex.github.io",
 ]);
 
 export function corsOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return null;
+  if (origin === new URL(request.url).origin) return origin;
   return allowedOrigins.has(origin) ? origin : false;
 }
 

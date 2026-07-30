@@ -306,18 +306,6 @@ input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(29,111,77,.
 
 .center-state { min-height: 70vh; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); }
 .center-state.error { flex-direction: column; color: var(--red); }
-.center-state.backend-setup {
-  max-width: 560px;
-  min-height: 70vh;
-  margin: auto;
-  padding: 30px;
-  flex-direction: column;
-  text-align: center;
-}
-.backend-setup > svg { color: var(--orange); }
-.backend-setup > span { max-width: 46ch; color: var(--muted); line-height: 1.5; }
-.backend-setup form { width: min(100%, 480px); display: flex; gap: 8px; }
-.backend-setup form input { min-width: 0; flex: 1; }
 .backend-setup small { color: var(--red); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

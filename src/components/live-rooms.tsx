@@ -107,7 +107,7 @@ function RoomShell({
             </Link>
           ))}
         </nav>
-        <Link href={connected ? "/dashboard" : "/api/paybox/connect?returnTo=/trade"} className="live-wallet">
+        <Link href={connected ? "/portfolio" : "/api/paybox/connect?returnTo=/trade"} className="live-wallet">
           <i className={connected ? "connected" : ""} />
           {connected ? balance : "Connect Paybox"}
         </Link>

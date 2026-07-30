@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   Bitcoin,
+  BriefcaseBusiness,
   Gauge,
   Link2,
   Settings,
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui";
 const items = [
   { href: "/connect", label: "Connect", icon: Link2 },
   { href: "/setup", label: "Wallet setup", icon: WalletCards },
+  { href: "/portfolio", label: "Portfolio", icon: BriefcaseBusiness },
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },

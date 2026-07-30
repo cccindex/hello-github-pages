@@ -26,10 +26,20 @@ pnpm dev
 
 Open http://localhost:3000.
 
-The GitHub Pages frontend can also be opened from the same computer. It calls
-the backend through `http://localhost:3000`, so the local Next.js server and
-PostgreSQL must remain running. The browser may ask for permission to access a
-local network service; approve it only for this Pages site.
+The GitHub Pages frontend can also be opened from the same computer. Because
+browsers block an HTTPS Pages site from reading a plain HTTP localhost response,
+start a temporary HTTPS tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+Paste the resulting `https://…trycloudflare.com` address into the Pages
+frontend. The address is stored only in that browser. The local Next.js server,
+PostgreSQL, worker, and tunnel must remain running.
+
+Quick tunnels are for mock testing only. Do not enable real financial execution
+through a public quick-tunnel URL.
 
 In another terminal, start the local scheduler:
 

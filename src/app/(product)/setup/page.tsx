@@ -16,6 +16,16 @@ export default function SetupPage() {
         const blockedTest =
           latestTest?.status === "BLOCKED_BY_POLICY" ||
           latestTest?.status === "FAILED";
+        const pendingTest = Boolean(
+          latestTest &&
+            [
+              "PENDING_USER_APPROVAL",
+              "PENDING_SIGNATURE",
+              "PENDING_CONFIRMATION",
+              "PENDING_SETTLEMENT",
+              "UNKNOWN",
+            ].includes(latestTest.status),
+        );
         return (
           <div className="page">
             <div className="page-heading split">
@@ -61,7 +71,7 @@ export default function SetupPage() {
               <div className="fixed-details">
                 <span>Solana mainnet</span><span>Max $12 / rolling 24h</span><span>Expires in 24h</span>
               </div>
-              {selected && state.automation?.status === "TEST_REQUIRED" && (
+              {selected && state.automation?.status === "TEST_REQUIRED" && !pendingTest && (
                 <Button
                   onClick={() => action.mutate({ action: "run-test" })}
                   disabled={action.isPending}
@@ -78,8 +88,10 @@ export default function SetupPage() {
                   </p>
                 </div>
               )}
-              {state.executions[0]?.status === "PENDING_USER_APPROVAL" && (
-                <Link className="button button-primary" href="/dashboard">Approve test purchase</Link>
+              {pendingTest && (
+                <Link className="button button-primary" href="/dashboard">
+                  Open Paybox signing window
+                </Link>
               )}
             </Card>
           </div>

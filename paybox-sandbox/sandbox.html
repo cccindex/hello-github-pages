@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      html, body, iframe { width: 100%; min-height: 100%; margin: 0; border: 0; }
+      body { background: transparent; }
+    </style>
+  </head>
+  <body>
+    <script>
+      const allowedHost = "https://five-minute-bitcoin.vercel.app";
+      if (window.self === window.top) throw new Error("Sandbox must be embedded.");
+
+      const inner = document.createElement("iframe");
+      inner.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+      inner.style.cssText = "width:100%;min-height:720px;border:0;background:transparent";
+      document.body.appendChild(inner);
+
+      window.addEventListener("message", (event) => {
+        if (event.source === window.parent) {
+          if (event.origin !== allowedHost) return;
+          if (event.data?.method === "ui/notifications/sandbox-resource-ready") {
+            const html = event.data.params?.html;
+            if (typeof html !== "string") return;
+            const doc = inner.contentDocument || inner.contentWindow?.document;
+            doc.open();
+            doc.write(html);
+            doc.close();
+            return;
+          }
+          inner.contentWindow?.postMessage(event.data, "*");
+          return;
+        }
+        if (event.source === inner.contentWindow) {
+          window.parent.postMessage(event.data, allowedHost);
+        }
+      });
+
+      window.parent.postMessage({
+        jsonrpc: "2.0",
+        method: "ui/notifications/sandbox-proxy-ready",
+        params: {},
+      }, allowedHost);
+    </script>
+  </body>
+</html>

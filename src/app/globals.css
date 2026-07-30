@@ -236,6 +236,8 @@ h1, h2, h3, p { margin-top: 0; }
 .approval-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 11px; background: var(--orange-soft); color: var(--orange); }
 .approval-card h2, .activation-card h2 { margin-bottom: 8px; font-size: 22px; }
 .approval-card p:not(.eyebrow), .activation-card p:not(.eyebrow) { color: var(--muted); line-height: 1.55; }
+.paybox-signing-host { width: 100%; margin: 20px 0; }
+.paybox-signing-host iframe { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .progress-steps { margin: 22px 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .progress-steps span { padding: 7px 9px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 11px; }
 .progress-steps span.done { border-color: #bfddcb; background: var(--green-soft); color: var(--green); }

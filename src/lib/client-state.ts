@@ -58,6 +58,7 @@ export type ProductState = {
     displayAmountCents: number;
     receivedCbbtcAtomic: string | null;
     isSpendReserved: boolean;
+    providerResponseJson: Record<string, unknown> | null;
     policyDecisionJson: {
       allowed?: boolean;
       reasons?: string[];

@@ -17,7 +17,12 @@ import {
 import { env } from "@/lib/env";
 import { evaluatePolicy, isInFlight } from "@/lib/policy";
 import { mockPaybox } from "@/lib/paybox/mock-provider";
-import { listRealPayboxWallets } from "@/lib/paybox/real-provider";
+import {
+  getRealPayboxRequest,
+  listRealPayboxWallets,
+  requestRealPayboxSwap,
+} from "@/lib/paybox/real-provider";
+import type { PayboxExecutionRequest } from "@/lib/paybox/provider";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -247,6 +252,82 @@ async function completeSuccessfulExecution(
   }
 }
 
+async function completeRealSuccessfulExecution(
+  executionId: string,
+  provider: PayboxExecutionRequest,
+) {
+  const execution = await db.execution.findUniqueOrThrow({
+    where: { id: executionId },
+    include: { user: { include: { payboxConnection: true } } },
+  });
+  const connection = execution.user.payboxConnection!;
+  let wallet:
+    | Awaited<ReturnType<typeof listRealPayboxWallets>>[number]
+    | undefined;
+  try {
+    wallet = (await listRealPayboxWallets()).find(
+      (item) => item.id === connection.selectedCredentialId,
+    );
+  } catch {
+    wallet = undefined;
+  }
+
+  const nextCbbtcBalance = wallet
+    ? BigInt(wallet.cbbtcBalanceAtomic)
+    : connection.cbbtcBalanceAtomic;
+  const balanceIncrease =
+    nextCbbtcBalance > connection.cbbtcBalanceAtomic
+      ? nextCbbtcBalance - connection.cbbtcBalanceAtomic
+      : 0n;
+  const receivedCbbtcAtomic = provider.receivedCbbtcAtomic
+    ? BigInt(provider.receivedCbbtcAtomic)
+    : balanceIncrease;
+
+  await db.$transaction([
+    db.execution.update({
+      where: { id: executionId },
+      data: {
+        status: ExecutionStatus.SUCCESS,
+        providerRequestId: provider.requestId,
+        providerResponseJson: asJson(provider.raw ?? provider),
+        transactionSignature:
+          provider.transactionSignature ?? execution.transactionSignature,
+        receivedCbbtcAtomic,
+        isSpendReserved: false,
+        errorCode: null,
+        errorMessage: null,
+        completedAt: new Date(),
+      },
+    }),
+    db.executionTransition.create({
+      data: {
+        executionId,
+        fromStatus: execution.status,
+        toStatus: ExecutionStatus.SUCCESS,
+        note: "Paybox reported the real swap as successful.",
+      },
+    }),
+    db.payboxConnection.update({
+      where: { userId: execution.userId },
+      data: wallet
+        ? {
+            usdcBalanceAtomic: BigInt(wallet.usdcBalanceAtomic),
+            cbbtcBalanceAtomic: BigInt(wallet.cbbtcBalanceAtomic),
+            solBalanceLamports: BigInt(wallet.solBalanceLamports),
+            lastSyncedAt: new Date(),
+          }
+        : { lastSyncedAt: new Date() },
+    }),
+  ]);
+
+  if (execution.type === ExecutionType.TEST_PURCHASE) {
+    await db.automation.update({
+      where: { id: execution.automationId },
+      data: { status: AutomationStatus.READY },
+    });
+  }
+}
+
 export async function createExecution(
   type: ExecutionType,
   scheduledFor = new Date(),
@@ -283,7 +364,10 @@ export async function createExecution(
     idempotencyKeyExists: false,
     projectExecutionEnabled: env.PROJECT_EXECUTION_ENABLED,
     financialExecutionEnabled:
-      env.PAYBOX_MODE === "mock" || env.ALLOW_REAL_FINANCIAL_EXECUTION,
+      env.PAYBOX_MODE === "mock" ||
+      (type === ExecutionType.SCHEDULED_PURCHASE
+        ? env.ALLOW_REAL_RECURRING_EXECUTION
+        : env.ALLOW_REAL_FINANCIAL_EXECUTION),
     usdcBalanceAtomic: connection.usdcBalanceAtomic,
     solBalanceLamports: connection.solBalanceLamports,
   });
@@ -320,44 +404,55 @@ export async function createExecution(
   });
 
   if (!decision.allowed) return execution;
-  if (env.PAYBOX_MODE !== "mock") {
+  let provider: PayboxExecutionRequest;
+  try {
+    const swapInput = {
+      credentialId: connection.selectedCredentialId!,
+      idempotencyKey,
+      sourceMint: PURCHASE_CONFIG.sourceToken.mint,
+      destinationMint: PURCHASE_CONFIG.destinationToken.mint,
+      amountAtomic: PURCHASE_CONFIG.amountAtomic,
+      chain: PURCHASE_CONFIG.chain,
+      slippageBps: PURCHASE_CONFIG.slippageBps,
+      requiresApproval: isTest,
+    } as const;
+    provider =
+      env.PAYBOX_MODE === "mock"
+        ? await mockPaybox.requestSwap(swapInput)
+        : await requestRealPayboxSwap(swapInput);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Paybox request failed before a response was stored.";
     await db.execution.update({
       where: { id: execution.id },
       data: {
-        status: ExecutionStatus.BLOCKED_BY_POLICY,
-        errorCode: "REAL_PROVIDER_NOT_AUTHENTICATED",
-        errorMessage:
-          "Paybox OAuth discovery is available, but an authenticated tools/list session has not been configured.",
-        completedAt: new Date(),
+        status: ExecutionStatus.UNKNOWN,
+        errorCode: "PROVIDER_RESPONSE_UNKNOWN",
+        errorMessage: message,
+        isSpendReserved: true,
       },
     });
     await transition(
       execution.id,
       ExecutionStatus.EVALUATING_POLICY,
-      ExecutionStatus.BLOCKED_BY_POLICY,
-      "Stopped before any financial request: real provider authentication is incomplete.",
+      ExecutionStatus.UNKNOWN,
+      "The provider response was not conclusive. No duplicate request will be sent.",
     );
-    return execution;
+    throw error;
   }
-
-  const provider = await mockPaybox.requestSwap({
-    credentialId: connection.selectedCredentialId!,
-    idempotencyKey,
-    sourceMint: PURCHASE_CONFIG.sourceToken.mint,
-    destinationMint: PURCHASE_CONFIG.destinationToken.mint,
-    amountAtomic: PURCHASE_CONFIG.amountAtomic,
-    chain: PURCHASE_CONFIG.chain,
-    slippageBps: PURCHASE_CONFIG.slippageBps,
-    requiresApproval: isTest,
-  });
 
   await db.execution.update({
     where: { id: execution.id },
     data: {
       providerRequestId: provider.requestId,
       status: provider.status,
-      isSpendReserved: provider.status !== "FAILED",
-      providerResponseJson: asJson({ requestId: provider.requestId, status: provider.status }),
+      isSpendReserved: !["FAILED", "DENIED"].includes(provider.status),
+      providerResponseJson: asJson(
+        provider.raw ?? { requestId: provider.requestId, status: provider.status },
+      ),
+      completedAt: ["FAILED", "DENIED"].includes(provider.status)
+        ? new Date()
+        : null,
     },
   });
   await transition(
@@ -368,14 +463,57 @@ export async function createExecution(
   );
 
   if (provider.status === "SUCCESS") {
-    await completeSuccessfulExecution(
-      execution.id,
-      provider.requestId,
-      provider.transactionSignature!,
-      BigInt(provider.receivedCbbtcAtomic!),
-    );
+    if (env.PAYBOX_MODE === "mock") {
+      await completeSuccessfulExecution(
+        execution.id,
+        provider.requestId,
+        provider.transactionSignature!,
+        BigInt(provider.receivedCbbtcAtomic!),
+      );
+    } else {
+      await completeRealSuccessfulExecution(execution.id, provider);
+    }
   }
 
+  return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
+}
+
+export async function refreshExecution(executionId: string) {
+  const execution = await db.execution.findUniqueOrThrow({
+    where: { id: executionId },
+  });
+  if (!execution.providerRequestId) {
+    throw new Error("This execution has no Paybox request to refresh.");
+  }
+  if (env.PAYBOX_MODE === "mock") return execution;
+  if (!isInFlight(execution.status)) return execution;
+
+  const provider = await getRealPayboxRequest(execution.providerRequestId);
+  if (provider.status === "SUCCESS") {
+    await completeRealSuccessfulExecution(execution.id, provider);
+    return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
+  }
+
+  const terminal = provider.status === "FAILED" || provider.status === "DENIED";
+  await db.execution.update({
+    where: { id: execution.id },
+    data: {
+      status: provider.status,
+      providerResponseJson: asJson(provider.raw ?? provider),
+      isSpendReserved: !terminal,
+      completedAt: terminal ? new Date() : null,
+      errorCode: terminal ? `PAYBOX_${provider.status}` : null,
+      errorMessage: terminal ? `Paybox ended this request as ${provider.status.toLowerCase()}.` : null,
+    },
+  });
+  if (provider.status !== execution.status) {
+    await transition(
+      execution.id,
+      execution.status,
+      provider.status,
+      `Paybox request is now ${provider.status.toLowerCase().replaceAll("_", " ")}.`,
+    );
+  }
   return db.execution.findUniqueOrThrow({ where: { id: execution.id } });
 }
 

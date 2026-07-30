@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { WithState } from "@/components/page-state";
+import { PayboxSigningApp } from "@/components/paybox-signing-app";
 import { Address, Badge, Button, Card, Metric } from "@/components/ui";
 
 function formatCountdown(date: string | null) {
@@ -35,9 +36,17 @@ export default function DashboardPage() {
       {(state, action) => {
         const automation = state.automation!;
         const connection = state.connection!;
-        const pendingTest = state.executions.find(
-          (item) => item.type === "TEST_PURCHASE" && item.status === "PENDING_USER_APPROVAL",
+        const pendingExecution = state.executions.find(
+          (item) =>
+            [
+              "PENDING_USER_APPROVAL",
+              "PENDING_SIGNATURE",
+              "PENDING_CONFIRMATION",
+              "PENDING_SETTLEMENT",
+              "UNKNOWN",
+            ].includes(item.status),
         );
+        const pendingIsTest = pendingExecution?.type === "TEST_PURCHASE";
         const testSuccess = state.executions.find(
           (item) => item.type === "TEST_PURCHASE" && item.status === "SUCCESS",
         );
@@ -53,14 +62,18 @@ export default function DashboardPage() {
               <Badge status={automation.status} />
             </div>
 
-            {pendingTest && (
+            {pendingExecution && (
               <Card className="approval-card">
                 <div className="approval-icon"><ShieldCheck size={24} /></div>
                 <div>
                   <p className="eyebrow">Approval required</p>
-                  <h2>Approve the $1 test purchase</h2>
+                  <h2>
+                    {pendingIsTest
+                      ? "Approve the $1 test purchase"
+                      : "Complete the pending $1 purchase"}
+                  </h2>
                   <p>
-                    This mock request will spend exactly 1 USDC from{" "}
+                    This request will spend exactly 1 USDC from{" "}
                     <Address>{connection.selectedWalletAddress}</Address> and receive cbBTC.
                   </p>
                   <div className="progress-steps">
@@ -68,12 +81,40 @@ export default function DashboardPage() {
                       (step, index) => <span className={index < 2 ? "done" : index === 2 ? "current" : ""} key={step}>{index < 2 ? <Check size={13} /> : index + 1} {step}</span>,
                     )}
                   </div>
-                  <Button
-                    onClick={() => action.mutate({ action: "approve-test", executionId: pendingTest.id })}
-                    disabled={action.isPending}
-                  >
-                    Approve exactly 1 USDC
-                  </Button>
+                  {state.mode === "mock" && pendingIsTest ? (
+                    <Button
+                      onClick={() => action.mutate({ action: "approve-test", executionId: pendingExecution.id })}
+                      disabled={action.isPending}
+                    >
+                      Approve exactly 1 USDC
+                    </Button>
+                  ) : (
+                    <>
+                      <PayboxSigningApp
+                        executionId={pendingExecution.id}
+                        credentialId={connection.selectedCredentialId!}
+                        toolResult={pendingExecution.providerResponseJson ?? {}}
+                        onRequestChanged={() =>
+                          action.mutate({
+                            action: "refresh-execution",
+                            executionId: pendingExecution.id,
+                          })
+                        }
+                      />
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          action.mutate({
+                            action: "refresh-execution",
+                            executionId: pendingExecution.id,
+                          })
+                        }
+                        disabled={action.isPending}
+                      >
+                        Refresh Paybox status
+                      </Button>
+                    </>
+                  )}
                 </div>
               </Card>
             )}

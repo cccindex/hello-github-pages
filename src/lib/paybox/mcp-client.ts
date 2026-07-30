@@ -73,7 +73,16 @@ export class PayboxMcpClient {
     });
   }
 
-  async callTool(name: string, args: Record<string, unknown> = {}) {
+  async readResource(uri: string) {
+    return this.post({
+      jsonrpc: "2.0",
+      id: randomUUID(),
+      method: "resources/read",
+      params: { uri },
+    });
+  }
+
+  async callToolRaw(name: string, args: Record<string, unknown> = {}) {
     const result = (await this.post({
       jsonrpc: "2.0",
       id: randomUUID(),
@@ -87,6 +96,11 @@ export class PayboxMcpClient {
     if (result?.isError) {
       throw new Error(result.content?.find((item) => item.type === "text")?.text ?? "Paybox tool failed.");
     }
+    return result;
+  }
+
+  async callTool(name: string, args: Record<string, unknown> = {}) {
+    const result = await this.callToolRaw(name, args);
     if (result?.structuredContent) return result.structuredContent;
     const text = result?.content?.find((item) => item.type === "text")?.text;
     if (!text) return result;

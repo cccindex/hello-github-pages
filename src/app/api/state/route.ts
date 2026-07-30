@@ -6,6 +6,7 @@ import {
   connectMockPaybox,
   createExecution,
   getLocalState,
+  refreshExecution,
   resetLocalData,
   revokeAccess,
   selectMockWallet,
@@ -44,6 +45,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("revoke") }),
   z.object({ action: z.literal("run-now") }),
   z.object({ action: z.literal("run-scheduler"), scheduledAt: z.string().datetime().optional() }),
+  z.object({ action: z.literal("refresh-execution"), executionId: z.string() }),
   z.object({ action: z.literal("reset") }),
 ]);
 
@@ -98,6 +100,9 @@ export async function POST(request: Request) {
         await triggerSchedulerDelivery(
           input.scheduledAt ? new Date(input.scheduledAt) : undefined,
         );
+        break;
+      case "refresh-execution":
+        await refreshExecution(input.executionId);
         break;
       case "reset":
         await resetLocalData();

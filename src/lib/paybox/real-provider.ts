@@ -3,7 +3,13 @@ import { db } from "@/lib/db";
 import { LOCAL_USER_ID, PURCHASE_CONFIG } from "@/lib/constants";
 import { PayboxMcpClient } from "@/lib/paybox/mcp-client";
 import { getPayboxAccessToken } from "@/lib/paybox/oauth";
-import type { PayboxWallet } from "@/lib/paybox/provider";
+import type {
+  PayboxExecutionRequest,
+  PayboxWallet,
+  SwapRequest,
+} from "@/lib/paybox/provider";
+
+const WALLET_SIGN_RESOURCE = "ui://paybox/wallet-sign?v=72b844fead9cd20c";
 
 type CredentialList = {
   credentials?: Array<{
@@ -22,6 +28,84 @@ type Portfolio = {
     tokenAddress?: string;
   }>;
 };
+
+type ToolResult = {
+  content?: Array<{ type: string; text?: string }>;
+  structuredContent?: unknown;
+  isError?: boolean;
+  _meta?: unknown;
+};
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function nestedRecord(value: unknown, ...keys: string[]) {
+  let current = record(value);
+  for (const key of keys) current = record(current[key]);
+  return current;
+}
+
+function firstString(...values: unknown[]) {
+  return values.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function structuredResult(result: ToolResult) {
+  if (result.structuredContent) return record(result.structuredContent);
+  const text = result.content?.find((item) => item.type === "text")?.text;
+  if (!text) return {};
+  try {
+    return record(JSON.parse(text));
+  } catch {
+    return { text };
+  }
+}
+
+function normalizeRequest(result: ToolResult): PayboxExecutionRequest {
+  const value = structuredResult(result);
+  const request = record(value.request);
+  const output = nestedRecord(value, "output", "value");
+  const statusValue = firstString(value.status, request.status)?.toLowerCase();
+  const status: PayboxExecutionRequest["status"] =
+    statusValue === "pending_approval"
+      ? "PENDING_USER_APPROVAL"
+      : statusValue === "pending_signature"
+        ? "PENDING_SIGNATURE"
+        : statusValue === "pending_confirmation"
+          ? "PENDING_CONFIRMATION"
+          : statusValue === "pending_settlement"
+            ? "PENDING_SETTLEMENT"
+            : statusValue === "success"
+              ? "SUCCESS"
+              : statusValue === "denied"
+                ? "DENIED"
+                : statusValue === "error"
+                  ? "FAILED"
+                  : "UNKNOWN";
+  const requestId = firstString(value.request_id, request.request_id, value.requestId);
+  if (!requestId) throw new Error("Paybox did not return a request ID.");
+  return {
+    requestId,
+    status,
+    transactionSignature: firstString(
+      value.transaction_signature,
+      value.transaction_hash,
+      output.transaction_signature,
+      output.transaction_hash,
+      output.signature,
+      output.tx_hash,
+    ),
+    receivedCbbtcAtomic: firstString(
+      value.received_amount,
+      output.received_amount,
+      output.amount_out,
+      output.dst_amount,
+    ),
+    raw: result,
+  };
+}
 
 async function initializedClient(accessToken?: string) {
   const client = new PayboxMcpClient(accessToken ?? (await getPayboxAccessToken()));
@@ -60,6 +144,11 @@ export async function listRealPayboxWallets(accessToken?: string): Promise<Paybo
       const sol = portfolio.items?.find(
         (item) => item.tokenAddress === "native" && item.symbol?.toUpperCase() === "SOL",
       );
+      const cbbtc = portfolio.items?.find(
+        (item) =>
+          item.tokenAddress === PURCHASE_CONFIG.destinationToken.mint ||
+          item.symbol?.toUpperCase() === "CBBTC",
+      );
       return {
         id: credential.credential_id,
         name: credential.name ?? "Paybox Solana wallet",
@@ -69,6 +158,7 @@ export async function listRealPayboxWallets(accessToken?: string): Promise<Paybo
         approvalMode:
           credential.approval_mode === "always_approve" ? "ALWAYS_APPROVE" : "AUTONOMOUS",
         usdcBalanceAtomic: usdc?.balance ?? "0",
+        cbbtcBalanceAtomic: cbbtc?.balance ?? "0",
         solBalanceLamports: sol?.balance ?? "0",
       };
     }),
@@ -112,6 +202,7 @@ export async function selectRealPayboxWallet(credentialId: string) {
         approvalMode:
           wallet.approvalMode === "AUTONOMOUS" ? ApprovalMode.AUTONOMOUS : ApprovalMode.ALWAYS_APPROVE,
         usdcBalanceAtomic: BigInt(wallet.usdcBalanceAtomic),
+        cbbtcBalanceAtomic: BigInt(wallet.cbbtcBalanceAtomic),
         solBalanceLamports: BigInt(wallet.solBalanceLamports),
         lastSyncedAt: new Date(),
       },
@@ -121,4 +212,53 @@ export async function selectRealPayboxWallet(credentialId: string) {
       data: { status: AutomationStatus.TEST_REQUIRED },
     }),
   ]);
+}
+
+export async function requestRealPayboxSwap(
+  input: SwapRequest,
+): Promise<PayboxExecutionRequest> {
+  const client = await initializedClient();
+  const result = (await client.callToolRaw("request_swap", {
+    credential_id: input.credentialId,
+    src_chain: input.chain,
+    src_token: input.sourceMint,
+    dst_token: input.destinationMint,
+    amount: input.amountAtomic,
+    swap_direction: "exact-amount-in",
+    slippage_bps: input.slippageBps,
+    value_cents: 100,
+  })) as ToolResult;
+  return normalizeRequest(result);
+}
+
+export async function getRealPayboxRequest(
+  requestId: string,
+): Promise<PayboxExecutionRequest> {
+  const client = await initializedClient();
+  const result = (await client.callToolRaw("get_request", {
+    request_id: requestId,
+  })) as ToolResult;
+  return normalizeRequest(result);
+}
+
+export async function getPayboxSigningResource() {
+  const client = await initializedClient();
+  return client.readResource(WALLET_SIGN_RESOURCE);
+}
+
+const APP_TOOL_NAMES = new Set([
+  "get_request",
+  "moonx_resolve_binding",
+  "moonx_sign",
+  "submit_envelopes",
+  "submit_signature",
+]);
+
+export async function callPayboxSigningTool(
+  name: string,
+  args: Record<string, unknown>,
+) {
+  if (!APP_TOOL_NAMES.has(name)) throw new Error("This Paybox app tool is not allowed.");
+  const client = await initializedClient();
+  return client.callToolRaw(name, args);
 }

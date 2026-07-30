@@ -43,6 +43,7 @@ export const MOCK_WALLETS = [
     chains: ["solana:mainnet"],
     approvalMode: "ALWAYS_APPROVE" as const,
     usdcBalanceAtomic: "20000000",
+    cbbtcBalanceAtomic: "0",
     solBalanceLamports: "50000000",
   },
   {
@@ -53,6 +54,7 @@ export const MOCK_WALLETS = [
     chains: ["solana:mainnet"],
     approvalMode: "ALWAYS_APPROVE" as const,
     usdcBalanceAtomic: "10000000",
+    cbbtcBalanceAtomic: "0",
     solBalanceLamports: "20000000",
   },
 ] as const;

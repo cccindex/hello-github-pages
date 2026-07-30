@@ -6,6 +6,7 @@ export type PayboxWallet = {
   chains: string[];
   approvalMode: "ALWAYS_APPROVE" | "AUTONOMOUS";
   usdcBalanceAtomic: string;
+  cbbtcBalanceAtomic: string;
   solBalanceLamports: string;
 };
 
@@ -33,6 +34,7 @@ export type PayboxExecutionRequest = {
     | "UNKNOWN";
   transactionSignature?: string;
   receivedCbbtcAtomic?: string;
+  raw?: unknown;
 };
 
 export interface PayboxProvider {

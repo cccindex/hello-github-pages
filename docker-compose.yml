@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: five_minute_bitcoin
+      POSTGRES_PASSWORD: local_only
+      POSTGRES_DB: five_minute_bitcoin
+    ports:
+      - "54329:5432"
+    volumes:
+      - five_minute_bitcoin_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U five_minute_bitcoin"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  five_minute_bitcoin_data:

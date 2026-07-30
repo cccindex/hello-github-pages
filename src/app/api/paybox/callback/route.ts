@@ -12,9 +12,13 @@ import {
 import { resolveBrowserSession } from "@/lib/browser-session";
 
 function finishRedirect(request: NextRequest, query: string) {
-  const response = NextResponse.redirect(new URL(`/connect?${query}`, request.url));
+  const returnTo = request.cookies.get("paybox_oauth_return_to")?.value === "/trade"
+    ? "/trade"
+    : "/connect";
+  const response = NextResponse.redirect(new URL(`${returnTo}?${query}`, request.url));
   response.cookies.delete("paybox_oauth_state");
   response.cookies.delete("paybox_pkce_verifier");
+  response.cookies.delete("paybox_oauth_return_to");
   return response;
 }
 

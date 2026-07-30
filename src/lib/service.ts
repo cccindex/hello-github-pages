@@ -119,6 +119,7 @@ export async function getLocalState(localUserId: string) {
 
   return {
     mode: env.PAYBOX_MODE,
+    aiConfigured: Boolean(process.env.OPENROUTER_API_KEY),
     realFinancialExecutionEnabled: env.ALLOW_REAL_FINANCIAL_EXECUTION,
     realRecurringExecutionEnabled: env.ALLOW_REAL_RECURRING_EXECUTION,
     projectExecutionEnabled: env.PROJECT_EXECUTION_ENABLED,

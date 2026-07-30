@@ -5,6 +5,12 @@ export const maxDuration = 30;
 
 const requestSchema = z.object({
   kind: z.enum(["trade", "intel", "duel", "quest"]),
+  context: z.object({
+    payboxConnected: z.boolean(),
+    walletSelected: z.boolean(),
+    automationStatus: z.string(),
+    realFinancialExecutionEnabled: z.boolean(),
+  }),
   messages: z
     .array(
       z.object({
@@ -63,6 +69,8 @@ export async function POST(request: Request) {
     const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-4.1-mini";
     const system = [
       roomInstructions[input.kind],
+      `Current application state: Paybox connected=${input.context.payboxConnected}; wallet selected=${input.context.walletSelected}; automation status=${input.context.automationStatus}; real one-off execution enabled=${input.context.realFinancialExecutionEnabled}.`,
+      "If Paybox is disconnected or no wallet is selected, explain the next onboarding step and do not surface a trade or automation action.",
       "The interface contains illustrative market feeds. Do not claim you have live prices, private tools, browsing, wallet access, or x402 access.",
       "A trade or automation is never executed by your response. You may only surface a review card. Set action='trade' only for the exact 1 USDC to cbBTC proposal. Set action='automation' only for exactly 1 USDC every five minutes with a $12 rolling-day cap, $25 lifetime cap, and 24-hour expiry. Otherwise set action='none'.",
       "Keep replies under 130 words and make the next useful step obvious.",

@@ -4,6 +4,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export type ProductState = {
   mode: "mock" | "real";
+  aiConfigured: boolean;
   realFinancialExecutionEnabled: boolean;
   realRecurringExecutionEnabled: boolean;
   projectExecutionEnabled: boolean;

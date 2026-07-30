@@ -207,8 +207,13 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
     useState<ProductState["executions"][number] | null>(null);
   const [actionResult, setActionResult] = useState("");
   const [chatLoaded, setChatLoaded] = useState(false);
+  const [oauthNotice, setOauthNotice] = useState("");
 
   const connected = data?.connection?.status === "CONNECTED";
+  const selectedCredentialId = data?.connection?.selectedCredentialId ?? null;
+  const latestTest = data?.executions.find(
+    (execution) => execution.type === "TEST_PURCHASE",
+  );
   const balance = data?.connection?.usdcBalanceAtomic
     ? (Number(data.connection.usdcBalanceAtomic) / 1e6).toFixed(2)
     : "—";
@@ -230,6 +235,18 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
       // A fresh chat is a safe fallback if browser storage is unavailable.
     }
     setChatLoaded(true);
+  }, [kind]);
+
+  useEffect(() => {
+    if (kind !== "trade") return;
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("paybox_error");
+    const didConnect = params.get("paybox") === "connected";
+    if (error) setOauthNotice(`Paybox connection failed: ${error.replaceAll("_", " ")}`);
+    if (didConnect) setOauthNotice("Paybox connected. Choose your wallet below.");
+    if (error || didConnect) {
+      window.history.replaceState({}, "", "/trade");
+    }
   }, [kind]);
 
   useEffect(() => {
@@ -280,7 +297,17 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind, messages: requestHistory }),
+        body: JSON.stringify({
+          kind,
+          messages: requestHistory,
+          context: {
+            payboxConnected: Boolean(connected),
+            walletSelected: Boolean(selectedCredentialId),
+            automationStatus: data?.automation?.status ?? "UNKNOWN",
+            realFinancialExecutionEnabled:
+              data?.realFinancialExecutionEnabled ?? false,
+          },
+        }),
       });
 
       if (response.ok) {
@@ -291,8 +318,14 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
         };
         reply = body.message;
         if (
-          (body.action === "trade" && ["trade", "duel"].includes(kind)) ||
-          (body.action === "automation" && kind === "trade")
+          (body.action === "trade" &&
+            ["trade", "duel"].includes(kind) &&
+            connected &&
+            selectedCredentialId) ||
+          (body.action === "automation" &&
+            kind === "trade" &&
+            connected &&
+            selectedCredentialId)
         ) {
           messageAction = body.action;
         }
@@ -428,6 +461,15 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
     }
   };
 
+  const refreshExecutionById = async (executionId: string) => {
+    const nextState = await productAction.mutateAsync({
+      action: "refresh-execution",
+      executionId,
+    });
+    const refreshed = nextState.executions.find((item) => item.id === executionId) ?? null;
+    if (submittedExecution?.id === executionId) setSubmittedExecution(refreshed);
+  };
+
   const workspace = (() => {
     switch (kind) {
       case "trade":
@@ -460,7 +502,7 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
           <span>{connected ? `${balance} USDC` : "Wallet offline"}</span>
           <Link
             className={connected ? "" : "wallet-connect-cta"}
-            href={connected ? "/dashboard" : "/connect"}
+            href={connected ? "/dashboard" : kind === "trade" ? "#trade-onboarding" : "/connect"}
           >
             {connected ? <Gauge size={15} /> : <><WalletCards size={15} /> Connect Paybox</>}
           </Link>
@@ -477,7 +519,9 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
                 <strong>Connect Paybox before asking the agent to transact.</strong>
                 <p>No site login. Connect → choose a wallet → approve the visible $1 test.</p>
               </div>
-              <Link href="/connect">Connect Paybox <ArrowRight size={16} /></Link>
+              <Link href={kind === "trade" ? "#trade-onboarding" : "/connect"}>
+                {kind === "trade" ? "Set up in chat" : "Connect Paybox"} <ArrowRight size={16} />
+              </Link>
             </section>
           )}
           <div className="experience-intro">
@@ -497,10 +541,29 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
               <strong>{config.agent}</strong>
               <span><i /> {config.agentStatus}</span>
             </div>
-            <span className="model-pill">AGENT</span>
+            <span className={`model-pill ${data?.aiConfigured ? "live" : "demo"}`}>
+              {data?.aiConfigured ? "LIVE AI" : "DEMO"}
+            </span>
           </div>
 
           <div className="chat-messages">
+            {kind === "trade" && data && (
+              <TradePayboxOnboarding
+                state={data}
+                latestTest={latestTest}
+                notice={oauthNotice}
+                busy={productAction.isPending}
+                onConnectMock={() => productAction.mutate({ action: "connect" })}
+                onSelectWallet={(credentialId) =>
+                  productAction.mutate({ action: "select-wallet", credentialId })
+                }
+                onRunTest={() => productAction.mutate({ action: "run-test" })}
+                onApproveTest={(executionId) =>
+                  productAction.mutate({ action: "approve-test", executionId })
+                }
+                onRefreshTest={(executionId) => refreshExecutionById(executionId)}
+              />
+            )}
             {kind === "trade" && data && (
               <ServerActionHistory
                 executions={data.executions.filter((item) =>
@@ -565,7 +628,12 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
               </button>
             </div>
             <div className="compose-meta">
-              <span><ShieldCheck size={13} /> Real payments require policy checks</span>
+              <span>
+                <ShieldCheck size={13} />{" "}
+                {data?.aiConfigured
+                  ? "Live AI proposes; Paybox and policy approve"
+                  : "Demo replies · add OpenRouter key for live AI"}
+              </span>
               <span>⌘ ↵</span>
             </div>
           </form>
@@ -652,6 +720,182 @@ export function AgentExperience({ kind }: { kind: ExperienceKind }) {
         </div>
       )}
     </main>
+  );
+}
+
+function TradePayboxOnboarding({
+  state,
+  latestTest,
+  notice,
+  busy,
+  onConnectMock,
+  onSelectWallet,
+  onRunTest,
+  onApproveTest,
+  onRefreshTest,
+}: {
+  state: ProductState;
+  latestTest: ProductState["executions"][number] | undefined;
+  notice: string;
+  busy: boolean;
+  onConnectMock: () => void;
+  onSelectWallet: (credentialId: string) => void;
+  onRunTest: () => void;
+  onApproveTest: (executionId: string) => void;
+  onRefreshTest: (executionId: string) => void;
+}) {
+  const connected = state.connection?.status === "CONNECTED";
+  const selected = state.connection?.selectedCredentialId;
+  const setupComplete = ["READY", "ACTIVE", "PAUSED"].includes(
+    state.automation?.status ?? "",
+  );
+  const pendingTest = Boolean(
+    latestTest &&
+      [
+        "PENDING_USER_APPROVAL",
+        "PENDING_SIGNATURE",
+        "PENDING_CONFIRMATION",
+        "PENDING_SETTLEMENT",
+      ].includes(latestTest.status),
+  );
+  const unknownTest = latestTest?.status === "UNKNOWN";
+  const failedTest = Boolean(
+    latestTest &&
+      ["BLOCKED_BY_POLICY", "FAILED", "DENIED"].includes(latestTest.status),
+  );
+
+  return (
+    <section className="chat-onboarding" id="trade-onboarding">
+      <div className="chat-onboarding-head">
+        <div>
+          <span>PAYBOX SETUP</span>
+          <strong>
+            {!connected
+              ? "Connect without leaving this experience"
+              : !selected
+                ? "Choose the wallet for this agent"
+                : setupComplete
+                  ? "Wallet ready"
+                  : "Approve the $1 test"}
+          </strong>
+        </div>
+        <b>{setupComplete ? "READY" : `${!connected ? 1 : !selected ? 2 : 3}/3`}</b>
+      </div>
+
+      <div className="chat-setup-steps">
+        <span className={connected ? "done" : "active"}><i>{connected ? <Check size={11} /> : "1"}</i>Connect</span>
+        <span className={selected ? "done" : connected ? "active" : ""}><i>{selected ? <Check size={11} /> : "2"}</i>Wallet</span>
+        <span className={setupComplete ? "done" : selected ? "active" : ""}><i>{setupComplete ? <Check size={11} /> : "3"}</i>$1 test</span>
+      </div>
+
+      {notice && <p className={notice.includes("failed") ? "setup-notice error" : "setup-notice"}>{notice}</p>}
+
+      {!connected && (
+        <>
+          <p>Authorize Paybox, then you will return directly to this chat.</p>
+          {state.mode === "real" ? (
+            <Link className="chat-setup-primary" href="/api/paybox/connect?returnTo=/trade">
+              <WalletCards size={15} /> Connect Paybox <ArrowRight size={14} />
+            </Link>
+          ) : (
+            <button className="chat-setup-primary" onClick={onConnectMock} disabled={busy}>
+              <WalletCards size={15} /> Connect mock Paybox
+            </button>
+          )}
+        </>
+      )}
+
+      {connected && !selected && (
+        <>
+          <p>Select one granted Solana wallet. This does not execute a transaction.</p>
+          <div className="chat-wallet-list">
+            {state.wallets.map((wallet) => (
+              <button
+                key={wallet.id}
+                onClick={() => onSelectWallet(wallet.id)}
+                disabled={!wallet.granted || busy}
+              >
+                <span><WalletCards size={14} /><b>{wallet.name}</b></span>
+                <small>{(Number(wallet.usdcBalanceAtomic) / 1e6).toFixed(2)} USDC</small>
+                <ChevronRight size={14} />
+              </button>
+            ))}
+            {!state.wallets.length && (
+              <div className="chat-wallet-empty">
+                No granted Solana wallet was returned. Grant one in Paybox, then reconnect.
+                <Link href="/api/paybox/connect?returnTo=/trade">Reconnect Paybox</Link>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {connected && selected && !setupComplete && (
+        <>
+          <div className="chat-selected-wallet">
+            <span>Selected wallet</span>
+            <strong>{state.connection?.selectedWalletName}</strong>
+          </div>
+          {!pendingTest && !unknownTest && (
+            <>
+              <p>Create the fixed 1 USDC → cbBTC request. Paybox still asks you to sign it.</p>
+              <button className="chat-setup-primary" onClick={onRunTest} disabled={busy}>
+                <CircleDollarSign size={15} />
+                {failedTest ? "Retry $1 test purchase" : "Run $1 test purchase"}
+              </button>
+            </>
+          )}
+          {failedTest && latestTest?.errorMessage && (
+            <p className="setup-notice error">{latestTest.errorMessage}</p>
+          )}
+          {unknownTest && latestTest && (
+            <button
+              className="chat-setup-secondary"
+              onClick={() => onRefreshTest(latestTest.id)}
+              disabled={busy}
+            >
+              Refresh uncertain Paybox request
+            </button>
+          )}
+          {pendingTest &&
+            latestTest &&
+            state.mode === "mock" &&
+            latestTest.status === "PENDING_USER_APPROVAL" && (
+              <button
+                className="chat-setup-primary"
+                onClick={() => onApproveTest(latestTest.id)}
+                disabled={busy}
+              >
+                Approve mock $1 test
+              </button>
+            )}
+          {pendingTest &&
+            latestTest &&
+            state.mode === "real" &&
+            state.connection?.selectedCredentialId && (
+            <div className="chat-test-signer">
+              <p>Finish the Paybox approval below. This is the only step that can move the test funds.</p>
+              <PayboxSigningApp
+                executionId={latestTest.id}
+                credentialId={state.connection.selectedCredentialId}
+                toolResult={latestTest.providerResponseJson ?? {}}
+                onRequestChanged={() => onRefreshTest(latestTest.id)}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {setupComplete && (
+        <div className="chat-setup-complete">
+          <ShieldCheck size={16} />
+          <div>
+            <strong>{state.connection?.selectedWalletName} is ready</strong>
+            <span>The AI can propose actions; you still confirm every real request.</span>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

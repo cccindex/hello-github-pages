@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
   try {
     const input = requestSchema.parse(await request.json());
-    const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-4.1-mini";
+    const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-5.4-mini";
     const system = [
       roomInstructions[input.kind],
       `Current application state: Paybox connected=${input.context.payboxConnected}; wallet selected=${input.context.walletSelected}; automation status=${input.context.automationStatus}; real one-off execution enabled=${input.context.realFinancialExecutionEnabled}.`,
@@ -86,8 +86,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model,
-        temperature: 0.45,
-        max_tokens: 260,
+        max_tokens: 420,
         response_format: responseSchema(),
         messages: [
           { role: "system", content: system },
